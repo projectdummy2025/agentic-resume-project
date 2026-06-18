@@ -1,5 +1,5 @@
 # Product Requirement Document (PRD)
-## Resume Materi: Agentic AI-Driven Document Digest Engine
+## Resume Materi: RAG & Agentic AI-Driven Document Digest Engine
 
 ---
 
@@ -23,7 +23,7 @@ Sistem memproduksi tiga tingkat kedalaman ringkasan dengan satu kali eksekusi ag
 
 ### 2.3 Context-Aware Theme Drill-Down
 *   **Mekanisme Interaktif:** Saat membaca hasil ringkasan, pengguna dapat mengklik sub-bab atau tema tertentu yang menarik perhatian mereka.
-*   **On-Demand Elaboration:** Daripada mengirimkan seluruh dokumen kembali ke LLM (yang memboroskan token), sistem akan mengambil potongan teks asli (*raw chunks*) yang relevan dari basis data, mengirimkannya ke LLM bersama instruksi spesifik, lalu menyajikan penjelasan mendalam langsung di antarmuka pengguna (*accordion/slide-over*).
+*   **On-Demand Elaboration (RAG Implementation):** Menggunakan pendekatan **Retrieval-Augmented Generation (RAG)**, daripada mengirimkan seluruh dokumen kembali ke LLM (yang memboroskan token), sistem akan mengubah interaksi pengguna/tema yang diklik menjadi *Vector Embeddings*, lalu melakukan pencarian kemiripan semantik (*Semantic Similarity Search*) untuk mengambil potongan teks asli (*raw chunks*) yang paling relevan dari *Vector Database*, mengirimkannya sebagai konteks ke LLM, lalu menyajikan penjelasan mendalam langsung di antarmuka pengguna (*accordion/slide-over*).
 
 ---
 
@@ -33,9 +33,9 @@ Sistem memproduksi tiga tingkat kedalaman ringkasan dengan satu kali eksekusi ag
 *   **Frontend UI:** Next.js (React) + TailwindCSS + Shadcn/ui (untuk rendering status progres agen).
 *   **BFF (Backend-for-Frontend) Gateway:** Node.js / Next.js API Routes (menangani autentikasi, penyimpanan riwayat, dan penyajian data statis).
 *   **AI Orchestration Engine:** FastAPI (Python) + LangGraph + Pydantic (menangani pipa parsing dokumen, koordinasi agen AI, dan penjaminan format luaran).
-*   **Inference Tier:** **Gemini 1.5 Flash** (untuk pengerjaan agen tingkat dasar seperti Planner dan Summarizer) & **Gemini 1.5 Pro** / LLM alternatif sekelasnya (sebagai Reviewer/Critic Agent).
+*   **Inference & Embedding Tier:** Seluruh pengerjaan agen menggunakan open model **Gemma 4** (via Gemini API): **Gemma 4 Dense** (`gemma-4-31b-it`) untuk agen utama (Planner, Summarizer) dan Evaluator (Reviewer/Critic Agent), serta **Gemma 4 MoE** (`gemma-4-26b-a4b-it`) khusus untuk fitur interaktif *Tanya Jawab* / *On-Demand Elaboration*. Untuk ekstraksi fitur semantik RAG, menggunakan model **Text Embeddings** yang kompatibel.
 *   **Data & State Store:**
-    *   **PostgreSQL:** Menyimpan dokumen asli, metadata, hasil ringkasan terstruktur, dan pemetaan segmen (*chunks*).
+    *   **PostgreSQL + pgvector:** Menyimpan dokumen asli, metadata, hasil ringkasan terstruktur, pemetaan segmen (*chunks*), dan menyimpan representasi *Vector Embeddings* untuk mendukung *Semantic Search* (RAG).
     *   **Redis:** Sebagai penengah antrean tugas asinkronus (*task queue*) dan penyimpanan status *state graph* LangGraph untuk *streaming* respons.
 
 ### 3.2 Agentic Workflow Design (LangGraph State Machine)
@@ -70,15 +70,22 @@ CREATE TABLE documents (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Menyimpan potongan teks asli hasil parsing semantik (Kunci efisiensi Drill-Down)
+-- Mengaktifkan ekstensi pgvector
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Menyimpan potongan teks asli hasil parsing semantik beserta vektornya untuk RAG
 CREATE TABLE document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
     chunk_index INT NOT NULL,
     heading_title VARCHAR(255), -- Nama bab/sub-bab asal teks ini
     raw_content TEXT NOT NULL,  -- Potongan teks asli
+    embedding VECTOR(768),      -- Vektor representasi semantik untuk pencarian RAG
     word_count INT NOT NULL
 );
+
+-- Indeks untuk mempercepat pencarian kemiripan vektor (HNSW)
+CREATE INDEX ON document_chunks USING hnsw (embedding vector_cosine_ops);
 
 -- Menyimpan hasil ringkasan utama yang sudah tervalidasi
 CREATE TABLE resumes (
@@ -108,6 +115,6 @@ CREATE TABLE resumes (
 ---
 
 ## 6. Key Engineering Challenges Solved (Portfolio Highlights)
-*   **Penyelesaian Limitasi Context Window:** Dengan memecah dokumen besar ke dalam skema `document_chunks`, sistem dapat memproses dokumen ratusan halaman tanpa menabrak batas token LLM, sekaligus menghemat biaya operasional API.
+*   **Penyelesaian Limitasi Context Window & RAG Integration:** Dengan memecah dokumen besar ke dalam skema `document_chunks` dan menyimpannya sebagai *Vector Embeddings* menggunakan `pgvector`, sistem menerapkan arsitektur inti **RAG**. Ini memungkinkan sistem memproses dokumen ratusan halaman tanpa menabrak batas token LLM, melakukan ekstraksi informasi berbasis *semantic search*, sekaligus sangat menghemat biaya operasional API.
 *   **Keandalan Format Keluaran (JSON Guardrails):** Memanfaatkan pustaka **Pydantic** di sisi Python untuk memastikan data yang masuk ke PostgreSQL selalu berupa struktur JSON bersih yang siap dirender oleh UI.
 *   **Strategi Mitigasi Latensi Tinggi:** Mengubah proses penulisan ringkasan yang memakan waktu lama menjadi pengalaman interaktif melalui pendekatan asinkronus (*background jobs*) dan visualisasi pemikiran agen (*streaming agent states*).
