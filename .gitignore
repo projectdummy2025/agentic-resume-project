@@ -1,25 +1,17 @@
-# Environments
-venv/
+# Environment & Secret files
 .env
 
-# ChromaDB local storage
-chroma_db/
-
-# Python caches
+# Python (Backend)
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
+*.py[cod]
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
+venv/
 
-# Editor/OS
+# Node.js (Frontend)
+node_modules/
+npm-debug.log*
+
+# Editor & OS
+.DS_Store
 .vscode/
 .idea/
-.DS_Store
-*.swp
-*.swo
-/docs/downtime.md
