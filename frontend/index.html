@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Chatbot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --surface-color: #2b2b2b;
+            --surface-hover: #333333;
+            --border-color: #3d3d3d;
+            --text-primary: #e3e3e3;
+            --text-secondary: #aaaaaa;
+            --text-muted: #777777;
+            --accent-color: #10a37f;
+            --user-bubble-bg: #2f3847;
+            --user-bubble-text: #e2e8f0;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Bar Header */
+        header {
+            height: 56px;
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--bg-color);
+            z-index: 10;
+        }
+
+        .header-brand {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+
+        .prompt-tabs {
+            display: flex;
+            background-color: var(--surface-color);
+            padding: 3px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            gap: 2px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.35rem 0.75rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .tab-btn:hover:not(:disabled) {
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            background-color: #424242;
+            color: var(--text-primary);
+        }
+
+        .tab-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Main Chat Area */
+        main {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        .chat-wrapper {
+            width: 100%;
+            max-width: 768px;
+            padding: 2rem 1.5rem 8rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            margin: auto;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            height: 100%;
+            width: 100%;
+            padding: 3rem 0 1rem 0;
+        }
+
+        .empty-state-header {
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.25rem;
+        }
+
+        .empty-state-icon {
+            width: 44px;
+            height: 44px;
+            color: var(--text-secondary);
+            margin-bottom: 1.25rem;
+        }
+
+        .empty-state h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .suggestion-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.85rem;
+            width: 100%;
+            max-width: 768px;
+            margin-bottom: 1.75rem;
+            pointer-events: auto;
+        }
+
+        .suggestion-card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 1.1rem 1.25rem;
+            border-radius: 14px;
+            text-align: left;
+            font-size: 0.875rem;
+            line-height: 1.45;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+        }
+
+        .suggestion-card:hover {
+            background-color: var(--surface-hover);
+            color: var(--text-primary);
+            border-color: #555;
+            transform: translateY(-2px);
+        }
+
+        /* Messages Layout */
+        .message-row {
+            width: 100%;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-row.user {
+            justify-content: flex-end;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 4px;
+        }
+
+        .avatar.bot-avatar {
+            background-color: var(--accent-color);
+            color: #fff;
+        }
+
+        .avatar svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .user-bubble {
+            background-color: var(--user-bubble-bg);
+            color: var(--user-bubble-text);
+            padding: 0.85rem 1.2rem;
+            border-radius: 18px;
+            border-bottom-right-radius: 4px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            max-width: 85%;
+            word-break: break-word;
+        }
+
+        .bot-content {
+            flex: 1;
+            width: 100%;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        /* Accordion Thinking (CoT) */
+        details.thinking-accordion {
+            margin-bottom: 1rem;
+            border-left: 2px solid var(--border-color);
+            padding-left: 0.85rem;
+        }
+
+        details.thinking-accordion summary {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            outline: none;
+            padding: 0.2rem 0;
+            font-weight: 500;
+        }
+
+        details.thinking-accordion summary:hover {
+            color: var(--text-secondary);
+        }
+
+        .thinking-body {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        /* Result Sections & Markdown Formatting */
+        .result-block {
+            margin-bottom: 1rem;
+        }
+
+        .result-block > *:first-child {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+        }
+
+        .result-block h1, .result-block h2, .result-block h3 {
+            font-weight: 600;
+            line-height: 1.35;
+            color: #ffffff;
+            margin-top: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .result-block h1 { font-size: 1.35rem; }
+        .result-block h2 { font-size: 1.2rem; }
+        .result-block h3 { font-size: 1.05rem; }
+
+        .result-block p {
+            margin-bottom: 0.75rem;
+        }
+
+        .result-block p:last-child {
+            margin-bottom: 0;
+        }
+
+        .result-block ul, .result-block ol {
+            margin-left: 1.25rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .result-block li {
+            margin-bottom: 0.35rem;
+        }
+
+        .result-block strong {
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .result-block code {
+            background-color: #141414;
+            color: #38bdf8;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+        }
+
+        .meta-card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            margin-top: 0.75rem;
+            width: 100%;
+        }
+
+        .meta-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .meta-value {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .sources-flex {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-top: 0.25rem;
+        }
+
+        .source-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background-color: #1a2e26;
+            color: #34d399;
+            padding: 0.3rem 0.65rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            text-decoration: none;
+            border: 1px solid rgba(52, 211, 153, 0.25);
+            word-break: break-all;
+            transition: background-color 0.2s;
+        }
+
+        .source-link:hover {
+            background-color: #224236;
+        }
+
+        /* JSON Block */
+        .json-toggle-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .json-toggle-btn:hover {
+            background-color: var(--surface-hover);
+            color: var(--text-primary);
+        }
+
+        pre.raw-json-block {
+            width: 100%;
+            background-color: #141414;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            margin-top: 0.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.825rem;
+            color: #67e8f9;
+            overflow-x: auto;
+            display: none;
+        }
+
+        /* Footer Container */
+        .footer-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg, rgba(30,30,30,0) 0%, rgba(30,30,30,0.9) 30%, var(--bg-color) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 1.5rem 1.25rem 1.5rem;
+            pointer-events: none;
+        }
+
+        .input-box-wrapper {
+            width: 100%;
+            max-width: 768px;
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            pointer-events: auto;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            transition: border-color 0.2s;
+        }
+
+        .input-box-wrapper:focus-within {
+            border-color: #666;
+        }
+
+        textarea {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+            resize: none;
+            height: 24px;
+            max-height: 160px;
+            line-height: 1.4;
+        }
+
+        textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .send-button {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--accent-color);
+            color: #fff;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: opacity 0.2s;
+        }
+
+        .send-button:disabled {
+            background-color: #3d3d3d;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        .send-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .disclaimer {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+            pointer-events: auto;
+        }
+
+        /* Typing Indicator */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            height: 32px;
+        }
+
+        .typing-indicator span {
+            width: 6px;
+            height: 6px;
+            background-color: var(--text-muted);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="header-brand">Universal Chatbot</div>
+        <div class="prompt-tabs" id="promptTabs">
+            <button class="tab-btn active" data-style="zero-shot" onclick="selectTab('zero-shot')">Zero-Shot</button>
+            <button class="tab-btn" data-style="few-shot" onclick="selectTab('few-shot')">Few-Shot</button>
+            <button class="tab-btn" data-style="cot" onclick="selectTab('cot')">CoT</button>
+        </div>
+    </header>
+
+    <!-- Main View -->
+    <main id="mainContent">
+        <div class="chat-wrapper" id="chatWrapper">
+            <div class="empty-state" id="emptyState">
+                <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                <h1>Apa yang ingin Anda tanyakan hari ini?</h1>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Input Bar -->
+    <div class="footer-container">
+        <div class="suggestion-grid" id="suggestionGrid">
+            <div class="suggestion-card" onclick="useSuggestion('Apa itu Machine Learning dan bagaimana cara kerjanya?')">
+                Apa itu Machine Learning dan bagaimana cara kerjanya?
+            </div>
+            <div class="suggestion-card" onclick="useSuggestion('Jelaskan perbedaan antara REST API dan GraphQL.')">
+                Jelaskan perbedaan antara REST API dan GraphQL.
+            </div>
+            <div class="suggestion-card" onclick="useSuggestion('Berikan rekomendasi langkah belajar pemrograman Web.')">
+                Berikan rekomendasi langkah belajar pemrograman Web.
+            </div>
+        </div>
+        <div class="input-box-wrapper">
+            <textarea id="inputText" placeholder="Ketik pesan..." rows="1" oninput="autoResize(this)" onkeydown="handleKeyPress(event)"></textarea>
+            <button class="send-button" id="sendBtn" onclick="sendMessage()" aria-label="Kirim Pesan">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+        </div>
+        <div class="disclaimer">
+            Chatbot universal berbasis LLM. Hasil disajikan dalam format terstruktur.
+        </div>
+    </div>
+
+    <script>
+        let currentPromptStyle = 'zero-shot';
+        let isChatLocked = false;
+
+        function selectTab(style) {
+            if (isChatLocked) return;
+            currentPromptStyle = style;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.style === style);
+            });
+        }
+
+        function lockTabs() {
+            if (!isChatLocked) {
+                isChatLocked = true;
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.disabled = true;
+                });
+            }
+        }
+
+        function autoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function useSuggestion(text) {
+            document.getElementById('inputText').value = text;
+            autoResize(document.getElementById('inputText'));
+            sendMessage();
+        }
+
+        async function sendMessage() {
+            const inputEl = document.getElementById('inputText');
+            const style = currentPromptStyle;
+            const chatWrapper = document.getElementById('chatWrapper');
+            const emptyState = document.getElementById('emptyState');
+            const sendBtn = document.getElementById('sendBtn');
+
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            lockTabs();
+
+            if (emptyState) {
+                emptyState.style.display = 'none';
+            }
+            const suggestionGrid = document.getElementById('suggestionGrid');
+            if (suggestionGrid) {
+                suggestionGrid.style.display = 'none';
+            }
+
+            // User Message Row
+            const userRow = document.createElement('div');
+            userRow.className = 'message-row user';
+            userRow.innerHTML = `<div class="user-bubble">${escapeHtml(text)}</div>`;
+            chatWrapper.appendChild(userRow);
+
+            inputEl.value = '';
+            inputEl.style.height = '24px';
+            sendBtn.disabled = true;
+
+            scrollToBottom();
+
+            // Bot Response Row (no avatar)
+            const botRow = document.createElement('div');
+            botRow.className = 'message-row bot';
+            botRow.innerHTML = `
+                <div class="bot-content">
+                    <div class="typing-indicator">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+            `;
+            chatWrapper.appendChild(botRow);
+            scrollToBottom();
+
+            try {
+                const configRes = await fetch('/config');
+                const config = await configRes.json();
+
+                const res = await fetch(`${config.apiBaseUrl}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, prompt_style: style })
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "Gagal memproses permintaan");
+
+                const formatMarkdown = (val) => {
+                    if (!val) return '';
+                    let str = typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val);
+                    
+                    // Auto-fix inline list numbering: convert " text 1. Item 2. Item" into linebreaks
+                    str = str.replace(/(\s)(\d+\.\s+[A-Z])/g, '\n\n$2');
+
+                    if (window.marked) {
+                        return marked.parse(str);
+                    }
+                    return escapeHtml(str);
+                };
+
+                const formatText = (val) => {
+                    if (typeof val === 'object' && val !== null) {
+                        return JSON.stringify(val, null, 2);
+                    }
+                    return String(val || '-');
+                };
+
+                let contentHtml = '';
+
+                // Gemini-style Thinking Accordion
+                if (data.reasoning) {
+                    contentHtml += `
+                        <details class="thinking-accordion">
+                            <summary>
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                <span>Thinking process</span>
+                            </summary>
+                            <div class="thinking-body">${escapeHtml(formatText(data.reasoning))}</div>
+                        </details>`;
+                }
+
+                if (data.jawaban) {
+                    contentHtml += `<div class="result-block">${formatMarkdown(data.jawaban)}</div>`;
+                }
+
+                if (data.topik) {
+                    contentHtml += `
+                        <div class="meta-card">
+                            <div class="meta-label">Topik</div>
+                            <div class="meta-value">${escapeHtml(formatText(data.topik))}</div>
+                        </div>`;
+                }
+
+                if (data.sumber) {
+                    let sourcesList = Array.isArray(data.sumber) ? data.sumber : [data.sumber];
+                    let hasUrls = sourcesList.some(s => String(s).trim().startsWith('http'));
+
+                    let sourcesHtml = '';
+                    if (hasUrls) {
+                        sourcesHtml = `<div class="sources-flex">` + sourcesList.map(src => {
+                            const str = String(src).trim();
+                            if (str.startsWith('http://') || str.startsWith('https://')) {
+                                try {
+                                    const urlObj = new URL(str);
+                                    return `<a href="${escapeHtml(str)}" target="_blank" rel="noopener" class="source-link">
+                                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                        ${escapeHtml(urlObj.hostname)}
+                                    </a>`;
+                                } catch (e) {
+                                    return `<a href="${escapeHtml(str)}" target="_blank" rel="noopener" class="source-link">${escapeHtml(str)}</a>`;
+                                }
+                            }
+                            return `<span class="source-link" style="color: var(--text-primary); background: var(--surface-color); border-color: var(--border-color);">${escapeHtml(str)}</span>`;
+                        }).join('') + `</div>`;
+                    } else {
+                        // Plain text source - direct text without nested pill/card!
+                        sourcesHtml = `<div>${escapeHtml(formatText(data.sumber))}</div>`;
+                    }
+
+                    contentHtml += `
+                        <div class="meta-card">
+                            <div class="meta-label">Sumber</div>
+                            <div class="meta-value">${sourcesHtml}</div>
+                        </div>`;
+                }
+
+                contentHtml += `
+                    <button class="json-toggle-btn" onclick="toggleJson(this)">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                        <span>Tampilkan Raw JSON</span>
+                    </button>
+                    <pre class="raw-json-block">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+                `;
+
+                botRow.querySelector('.bot-content').innerHTML = contentHtml;
+
+            } catch (err) {
+                botRow.querySelector('.bot-content').innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml(err.message)}</span>`;
+            } finally {
+                sendBtn.disabled = false;
+                scrollToBottom();
+            }
+        }
+
+        function toggleJson(btn) {
+            const pre = btn.nextElementSibling;
+            const label = btn.querySelector('span');
+            if (pre.style.display === 'block') {
+                pre.style.display = 'none';
+                label.textContent = 'Tampilkan Raw JSON';
+            } else {
+                pre.style.display = 'block';
+                label.textContent = 'Sembunyikan Raw JSON';
+            }
+        }
+
+        function scrollToBottom() {
+            const main = document.getElementById('mainContent');
+            main.scrollTop = main.scrollHeight;
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+            });
+        }
+    </script>
+</body>
+</html>
