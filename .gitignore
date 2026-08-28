@@ -22,3 +22,4 @@ pip-delete-this-directory.txt
 .DS_Store
 *.swp
 *.swo
+/docs/downtime.md
