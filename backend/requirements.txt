@@ -3,3 +3,6 @@ uvicorn
 google-genai
 pydantic
 python-dotenv
+chromadb
+pypdf
+python-multipart
