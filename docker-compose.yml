@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: ./backend
+    container_name: chatbot-backend
+    working_dir: /project/backend
+    ports:
+      - "8000:8000"
+    environment:
+      - CHROMA_DIR=/data/chroma
+    volumes:
+      - .:/project:Z
+      - ./chroma-data:/data/chroma:Z
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
