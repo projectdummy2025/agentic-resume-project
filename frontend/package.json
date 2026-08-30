@@ -1,14 +1,14 @@
 {
   "name": "frontend",
   "version": "1.0.0",
-  "description": "Service run on port 3000",
-  "main": "server.js",
+  "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "astro": "^4.16.0",
+    "marked": "^14.1.0"
   }
 }
