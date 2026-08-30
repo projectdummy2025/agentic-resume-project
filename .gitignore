@@ -1,20 +1,34 @@
 # Environment & Secret files
 .env
+.env.local
 
 # Python (Backend)
 __pycache__/
 *.py[cod]
+*$py.class
 .venv/
 venv/
+ENV/
+*.db
 
-# Node.js (Frontend)
+# Node.js & Astro (Frontend)
 node_modules/
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/frontend/dist/
+/frontend/.astro/
 
-# Runtime data (Chroma vector store, generated)
+# Runtime data & Persistent volumes (generated)
 chroma-data/
+data/
 
 # Editor & OS
 .DS_Store
+Thumbs.db
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

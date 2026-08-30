@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py rag.py ./
+COPY *.py ./
 
 # Bake ONNX embedding model into image so container starts without downloading at runtime
 RUN python -c "from chromadb.utils import embedding_functions; embedding_functions.DefaultEmbeddingFunction()"

@@ -5,9 +5,12 @@ services:
     working_dir: /project/backend
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - CHROMA_DIR=/data/chroma
+      - SESSION_DB=/data/sessions.db
     volumes:
       - .:/project:Z
-      - ./chroma-data:/data/chroma:Z
+      - ./data:/data:Z
     command: uvicorn main:app --host 0.0.0.0 --port 8000
