@@ -2,9 +2,12 @@ import os
 import json
 import asyncio
 import uuid
+import traceback
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
 import rag
 import sessions
@@ -102,14 +105,11 @@ async def chat(req: QueryRequest):
         history = sessions.get_messages(req.session_id)
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
         system_instruction = build_chat_system_prompt(req.prompt_style, history_text)
-        from google import genai
-        from google.genai import types
-        from dotenv import load_dotenv
-        import os
-        load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+        
         client = genai.Client()
         model_name = os.getenv("MODEL_NAME", "gemma-4-26b-a4b-it")
         sessions.add_message(req.session_id, "user", req.text)
+        
         response = await asyncio.to_thread(
             lambda: client.models.generate_content(
                 model=model_name,
@@ -127,6 +127,8 @@ async def chat(req: QueryRequest):
     except HTTPException:
         raise
     except Exception as e:
+        print(f"ERROR in /chat: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -147,14 +149,11 @@ async def analyze(req: QueryRequest):
         docs = await asyncio.to_thread(rag.retrieve, req.session_id, req.text)
         context = "\n\n".join(f"[{d['source']}]\n{d['text']}" for d in docs)
         system_instruction = get_system_prompt(req.prompt_style, context)
-        from google import genai
-        from google.genai import types
-        from dotenv import load_dotenv
-        import os
-        load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+        
         client = genai.Client()
         model_name = os.getenv("MODEL_NAME", "gemma-4-26b-a4b-it")
         sessions.add_message(req.session_id, "user", req.text)
+        
         response = await asyncio.to_thread(
             lambda: client.models.generate_content(
                 model=model_name,
@@ -174,4 +173,6 @@ async def analyze(req: QueryRequest):
     except HTTPException:
         raise
     except Exception as e:
+        print(f"ERROR in /analyze: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
