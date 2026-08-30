@@ -144,8 +144,11 @@
     renderActiveState();
   });
 
-  window.addEventListener('session:refresh', () => {
-    refreshSessions();
+  window.addEventListener('session:refresh', async (e: any) => {
+    if (e.detail && e.detail.sessionId) {
+      currentActiveId = e.detail.sessionId;
+    }
+    await refreshSessions(currentActiveId);
   });
 
   refreshSessions();

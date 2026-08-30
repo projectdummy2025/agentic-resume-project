@@ -152,7 +152,7 @@ const suggestions = [
           await createSession(cleanId, text);
           currentSessionId = cleanId;
           localStorage.setItem('currentSessionId', currentSessionId);
-          window.dispatchEvent(new CustomEvent('session:refresh'));
+          window.dispatchEvent(new CustomEvent('session:refresh', { detail: { sessionId: currentSessionId } }));
         } catch (err) {
           botContent.innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml((err as Error).message)}</span>`;
           isChatLocked = false;
@@ -214,6 +214,9 @@ const suggestions = [
         if (res) {
           await loadHistory(currentSessionId);
           return;
+        } else {
+          // If the session is not found in backend (e.g. 404), clear it to create a new draft
+          currentSessionId = '';
         }
       }
       
@@ -242,7 +245,7 @@ const suggestions = [
           await createSession(cleanId, file.filename);
           currentSessionId = cleanId;
           localStorage.setItem('currentSessionId', currentSessionId);
-          window.dispatchEvent(new CustomEvent('session:refresh'));
+          window.dispatchEvent(new CustomEvent('session:refresh', { detail: { sessionId: currentSessionId } }));
         } catch (err) {
           if (labelText) labelText.textContent = 'Gagal';
           alert('Gagal membuat sesi: ' + (err as Error).message);

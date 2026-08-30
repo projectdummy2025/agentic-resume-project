@@ -1,12 +1,22 @@
 const API_BASE = '/api';
 
 async function request(path, options = {}) {
+  // Prevent sending requests for draft sessions defensively
+  if (path.includes('draft-')) {
+    throw new Error('Sesi ini belum disimpan.');
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || 'Gagal memproses permintaan');
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error('Sesi tidak ditemukan atau belum disimpan.');
+    }
+    throw new Error(data.detail || 'Gagal memproses permintaan');
+  }
   return data;
 }
 
@@ -37,6 +47,7 @@ export async function getMessages(sessionId) {
 }
 
 export async function chat(text, promptStyle, sessionId) {
+  if (sessionId && sessionId.startsWith('draft-')) throw new Error('Sesi ini belum disimpan.');
   return request('/chat', {
     method: 'POST',
     body: JSON.stringify({ text, prompt_style: promptStyle, session_id: sessionId, use_rag: false }),
@@ -44,6 +55,7 @@ export async function chat(text, promptStyle, sessionId) {
 }
 
 export async function analyze(text, promptStyle, sessionId) {
+  if (sessionId && sessionId.startsWith('draft-')) throw new Error('Sesi ini belum disimpan.');
   return request('/analyze', {
     method: 'POST',
     body: JSON.stringify({ text, prompt_style: promptStyle, session_id: sessionId, use_rag: true }),
