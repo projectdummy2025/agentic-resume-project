@@ -1,0 +1,152 @@
+---
+---
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <button class="sidebar-toggle-icon-btn" id="sidebarToggle" title="Buka / Tutup Sidebar">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <path d="M9 3v18"></path>
+      </svg>
+    </button>
+  </div>
+
+  <div class="sidebar-new-chat">
+    <button class="new-session-btn" id="newSessionBtn" title="Chat Baru">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <span class="new-chat-text">New chat</span>
+    </button>
+  </div>
+
+  <div class="session-list-container">
+    <div class="session-list" id="sessionList">
+      <div class="session-loading">Memuat...</div>
+    </div>
+  </div>
+</aside>
+
+<script>
+  import { listSessions, createSession, renameSession, deleteSession } from '../lib/api';
+
+  const sessionListEl = document.getElementById('sessionList');
+  const newBtn = document.getElementById('newSessionBtn');
+  const toggleBtn = document.getElementById('sidebarToggle');
+
+  toggleBtn?.addEventListener('click', () => {
+    document.querySelector('.app-container')?.classList.toggle('sidebar-collapsed');
+  });
+
+  let currentActiveId = localStorage.getItem('currentSessionId') || '';
+
+  async function refreshSessions(activeId) {
+    if (activeId !== undefined) currentActiveId = activeId;
+    try {
+      const sessions = await listSessions();
+      renderSessions(sessions);
+    } catch {
+      if (sessionListEl) sessionListEl.innerHTML = `<div class="session-empty">Belum ada chat</div>`;
+    }
+  }
+
+  function renderSessions(sessions) {
+    if (!sessionListEl) return;
+    if (!sessions || sessions.length === 0) {
+      sessionListEl.innerHTML = `<div class="session-empty">Belum ada chat</div>`;
+      return;
+    }
+
+    sessionListEl.innerHTML = sessions.map(s => `
+      <div class="session-item ${s.id === currentActiveId ? 'active' : ''}" data-id="${s.id}">
+        <button class="session-title-btn" data-id="${s.id}" title="${escapeAttr(s.title || 'Sesi Baru')}">
+          <span class="truncate">${escapeHtml(s.title || 'Sesi Baru')}</span>
+        </button>
+        <div class="session-item-actions">
+          <button class="action-btn btn-rename" data-id="${s.id}" data-title="${escapeAttr(s.title || '')}" title="Ubah Nama">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="action-btn btn-delete" data-id="${s.id}" title="Hapus">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+  }
+  function escapeAttr(str) {
+    return String(str).replace(/"/g, '&quot;');
+  }
+
+  function handleNewSession() {
+    currentActiveId = 'draft-' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('currentSessionId', currentActiveId);
+    window.dispatchEvent(new CustomEvent('session:change', { detail: { sessionId: currentActiveId } }));
+    refreshSessions(currentActiveId);
+  }
+
+  newBtn?.addEventListener('click', handleNewSession);
+
+  sessionListEl?.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    const renameBtn = target.closest('.btn-rename') as HTMLElement;
+    const deleteBtn = target.closest('.btn-delete') as HTMLElement;
+    const selectBtn = target.closest('.session-title-btn') as HTMLElement || target.closest('.session-item') as HTMLElement;
+
+    if (renameBtn) {
+      e.stopPropagation();
+      const id = renameBtn.dataset.id!;
+      const oldTitle = renameBtn.dataset.title || '';
+      const newTitle = prompt('Ubah judul sesi:', oldTitle);
+      if (newTitle !== null && newTitle.trim() !== '') {
+        await renameSession(id, newTitle.trim());
+        await refreshSessions();
+      }
+      return;
+    }
+
+    if (deleteBtn) {
+      e.stopPropagation();
+      const id = deleteBtn.dataset.id!;
+      if (confirm('Hapus percakapan ini?')) {
+        await deleteSession(id);
+        if (currentActiveId === id) {
+          const sessions = await listSessions();
+          currentActiveId = sessions[0]?.id || ('draft-' + Math.random().toString(36).substring(2, 15));
+          localStorage.setItem('currentSessionId', currentActiveId);
+          window.dispatchEvent(new CustomEvent('session:change', { detail: { sessionId: currentActiveId } }));
+        }
+        await refreshSessions();
+      }
+      return;
+    }
+
+    if (selectBtn) {
+      const id = selectBtn.dataset.id;
+      if (id && id !== currentActiveId) {
+        currentActiveId = id;
+        localStorage.setItem('currentSessionId', currentActiveId);
+        window.dispatchEvent(new CustomEvent('session:change', { detail: { sessionId: currentActiveId } }));
+        renderActiveState();
+      }
+    }
+  });
+
+  function renderActiveState() {
+    document.querySelectorAll('.session-item').forEach(el => {
+      el.classList.toggle('active', (el as HTMLElement).dataset.id === currentActiveId);
+    });
+  }
+
+  window.addEventListener('session:change', (e: any) => {
+    currentActiveId = e.detail.sessionId;
+    renderActiveState();
+  });
+
+  window.addEventListener('session:refresh', () => {
+    refreshSessions();
+  });
+
+  refreshSessions();
+</script>
