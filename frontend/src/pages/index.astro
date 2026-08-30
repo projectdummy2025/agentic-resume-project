@@ -2,6 +2,14 @@
 import '../styles/global.css';
 import ChatHeader from '../components/ChatHeader.astro';
 import Composer from '../components/Composer.astro';
+import Sidebar from '../components/Sidebar.astro';
+
+const suggestions = [
+  { icon: 'sparkles', label: 'Apa itu Machine Learning?', text: 'Apa itu Machine Learning dan bagaimana cara kerjanya?' },
+  { icon: 'code', label: 'REST API vs GraphQL', text: 'Jelaskan perbedaan antara REST API dan GraphQL.' },
+  { icon: 'compass', label: 'Belajar Pemrograman Web', text: 'Berikan rekomendasi langkah belajar pemrograman Web.' },
+  { icon: 'file-text', label: 'Analisis Dokumen PDF', text: 'Jelaskan ringkasan dokumen PDF yang sudah diunggah.' }
+];
 ---
 
 <!DOCTYPE html>
@@ -9,58 +17,80 @@ import Composer from '../components/Composer.astro';
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Universal AI Chatbot</title>
+  <title>Universal AI Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
-  <ChatHeader />
-  <Composer />
+  <div class="app-container">
+    <Sidebar />
+
+    <div class="main-section">
+      <ChatHeader />
+
+      <main id="mainContent" class="main-content">
+        <div class="empty-state" id="emptyState">
+          <div class="hero-icon">
+            <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/>
+            </svg>
+          </div>
+          <h1 class="hero-title">Apa yang ingin Anda pelajari hari ini?</h1>
+          <p class="hero-subtitle">Mulai obrolan umum atau unggah dokumen PDF untuk dianalisis secara akurat.</p>
+
+          <div class="suggestion-grid" id="suggestionGrid">
+            {suggestions.map((s) => (
+              <button class="suggestion-pill" data-suggestion={s.text}>
+                <span class="pill-icon">
+                  {s.icon === 'sparkles' && <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"/></svg>}
+                  {s.icon === 'code' && <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>}
+                  {s.icon === 'compass' && <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>}
+                  {s.icon === 'file-text' && <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
+                </span>
+                <span>{s.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div class="chat-wrapper" id="chatWrapper"></div>
+      </main>
+
+      <Composer />
+    </div>
+  </div>
 
   <script>
-    import { analyze, ingestPdf } from '../lib/api';
+    import { createSession, getMessages, chat, analyze, ingestPdf } from '../lib/api';
     import { renderResult, escapeHtml } from '../lib/format';
 
     let currentPromptStyle = 'zero-shot';
+    let useRag = false;
     let isChatLocked = false;
+    let currentSessionId = localStorage.getItem('currentSessionId') || '';
 
     const $ = (id: string) => document.getElementById(id)!;
     const inputEl = () => $('inputText') as HTMLTextAreaElement;
     const sendBtn = () => $('sendBtn') as HTMLButtonElement;
-    const modeSelectBtn = () => $('modeSelectBtn') as HTMLButtonElement;
-    const modeMenu = () => $('modeMenu') as HTMLElement;
 
-    function toggleModeMenu(show?: boolean) {
-      if (isChatLocked) return;
-      const menu = modeMenu();
-      const isVisible = show !== undefined ? show : menu.style.display !== 'flex';
-      menu.style.display = isVisible ? 'flex' : 'none';
-    }
+    function setRagMode(on: boolean) {
+      useRag = on;
+      const ragOn = $('ragOn');
+      const ragOff = $('ragOff');
+      if (ragOn) ragOn.classList.toggle('active', on);
+      if (ragOff) ragOff.classList.toggle('active', !on);
 
-    function selectMode(btn: HTMLElement) {
-      if (isChatLocked) return;
-      const style = btn.dataset.style!;
-      const label = btn.dataset.label!;
-      currentPromptStyle = style;
-
-      const iconSource = btn.querySelector('.item-icon-svg')?.innerHTML;
-      const iconEl = $('currentModeIcon');
-      const labelEl = $('currentModeLabel');
-      if (iconEl && iconSource) iconEl.innerHTML = iconSource;
-      if (labelEl) labelEl.textContent = label;
-
-      document.querySelectorAll('.mode-menu-item').forEach((item) => {
-        item.classList.toggle('active', item === btn);
-      });
-      toggleModeMenu(false);
+      // Hide or show PDF upload button based on RAG mode
+      const uploadBtn = document.querySelector('.upload-btn') as HTMLElement;
+      if (uploadBtn) {
+        uploadBtn.style.display = on ? 'inline-flex' : 'none';
+      }
     }
 
     function lockTabs() {
       if (isChatLocked) return;
       isChatLocked = true;
-      modeSelectBtn().disabled = true;
-      toggleModeMenu(false);
     }
 
     function autoResize(el: HTMLTextAreaElement) {
@@ -76,9 +106,12 @@ import Composer from '../components/Composer.astro';
 
     function hideIntro() {
       const empty = $('emptyState');
-      const grid = $('suggestionGrid');
       if (empty) empty.style.display = 'none';
-      if (grid) grid.style.display = 'none';
+    }
+
+    function showIntro() {
+      const empty = $('emptyState');
+      if (empty) empty.style.display = 'flex';
     }
 
     function addUserRow(text: string) {
@@ -97,8 +130,7 @@ import Composer from '../components/Composer.astro';
     }
 
     async function sendMessage() {
-      const el = inputEl();
-      const text = el.value.trim();
+      const text = inputEl().value.trim();
       if (!text || isChatLocked) return;
 
       hideIntro();
@@ -106,33 +138,123 @@ import Composer from '../components/Composer.astro';
       addUserRow(text);
       const botContent = addBotRow();
 
-      el.value = '';
-      el.style.height = 'auto';
+      inputEl().value = '';
+      inputEl().style.height = 'auto';
       sendBtn().disabled = true;
       scrollToBottom();
 
+      // Persist draft session on backend before sending message
+      if (!currentSessionId || currentSessionId.startsWith('draft-')) {
+        try {
+          const targetId = currentSessionId || ('draft-' + Math.random().toString(36).substring(2, 15));
+          const cleanId = targetId.replace('draft-', '');
+          
+          await createSession(cleanId, text);
+          currentSessionId = cleanId;
+          localStorage.setItem('currentSessionId', currentSessionId);
+          window.dispatchEvent(new CustomEvent('session:refresh'));
+        } catch (err) {
+          botContent.innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml((err as Error).message)}</span>`;
+          isChatLocked = false;
+          sendBtn().disabled = false;
+          return;
+        }
+      }
+
       try {
-        const data = await analyze(text, currentPromptStyle);
+        const api = useRag ? analyze : chat;
+        const data = await api(text, currentPromptStyle, currentSessionId);
         botContent.innerHTML = renderResult(data);
+        window.dispatchEvent(new CustomEvent('session:refresh'));
       } catch (err) {
         botContent.innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml((err as Error).message)}</span>`;
       } finally {
         isChatLocked = false;
         sendBtn().disabled = false;
-        modeSelectBtn().disabled = false;
         scrollToBottom();
       }
+    }
+
+    async function loadHistory(sessionId: string) {
+      const chatWrapper = $('chatWrapper');
+
+      if (!sessionId || sessionId.startsWith('draft-')) {
+        chatWrapper.innerHTML = '';
+        showIntro();
+        return;
+      }
+
+      try {
+        const data = await getMessages(sessionId);
+        chatWrapper.innerHTML = '';
+        if (!data.messages || data.messages.length === 0) {
+          showIntro();
+          return;
+        }
+
+        // Render messages
+        for (const msg of data.messages) {
+          if (msg.role === 'user') {
+            addUserRow(msg.content);
+          } else {
+            const botContent = addBotRow();
+            botContent.innerHTML = renderResult({ jawaban: msg.content });
+          }
+        }
+        scrollToBottom();
+      } catch {
+        chatWrapper.innerHTML = '';
+        showIntro();
+      }
+    }
+
+    async function initSession() {
+      if (currentSessionId && !currentSessionId.startsWith('draft-')) {
+        const res = await getMessages(currentSessionId).catch(() => null);
+        if (res) {
+          await loadHistory(currentSessionId);
+          return;
+        }
+      }
+      
+      // Initialize with a client-side draft ID, DO NOT hit backend!
+      if (!currentSessionId) {
+        currentSessionId = 'draft-' + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('currentSessionId', currentSessionId);
+      }
+      window.dispatchEvent(new CustomEvent('session:change', { detail: { sessionId: currentSessionId } }));
     }
 
     async function uploadDoc(input: HTMLInputElement) {
       const file = input.files?.[0];
       if (!file) return;
+
       const labelText = $('uploadLabelText');
       const prevText = labelText ? labelText.textContent : 'Lampirkan PDF';
       if (labelText) labelText.textContent = 'Mengunggah…';
+
+      // Persist draft session on backend before uploading PDF
+      if (!currentSessionId || currentSessionId.startsWith('draft-')) {
+        try {
+          const targetId = currentSessionId || ('draft-' + Math.random().toString(36).substring(2, 15));
+          const cleanId = targetId.replace('draft-', '');
+          
+          await createSession(cleanId, file.filename);
+          currentSessionId = cleanId;
+          localStorage.setItem('currentSessionId', currentSessionId);
+          window.dispatchEvent(new CustomEvent('session:refresh'));
+        } catch (err) {
+          if (labelText) labelText.textContent = 'Gagal';
+          alert('Gagal membuat sesi: ' + (err as Error).message);
+          return;
+        }
+      }
+
       try {
-        const res = await ingestPdf(file);
+        const res = await ingestPdf(file, currentSessionId);
         if (labelText) labelText.textContent = `✓ ${res.chunks} chunk`;
+        setRagMode(true);
+        window.dispatchEvent(new CustomEvent('session:refresh'));
       } catch (err) {
         if (labelText) labelText.textContent = 'Gagal';
         alert((err as Error).message);
@@ -143,32 +265,18 @@ import Composer from '../components/Composer.astro';
     }
 
     function init() {
-      modeSelectBtn().addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleModeMenu();
-      });
+      const ragOn = $('ragOn');
+      const ragOff = $('ragOff');
+      if (ragOn) ragOn.addEventListener('click', () => setRagMode(true));
+      if (ragOff) ragOff.addEventListener('click', () => setRagMode(false));
 
-      document.querySelectorAll('.mode-menu-item').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          selectMode(btn as HTMLElement);
-        });
-      });
-
-      document.addEventListener('click', (e) => {
-        const target = e.target as Node;
-        if (!modeSelectBtn().contains(target) && !modeMenu().contains(target)) {
-          toggleModeMenu(false);
-        }
-      });
-
-      document.querySelectorAll('.suggestion-pill').forEach((card) =>
+      document.querySelectorAll('.suggestion-pill').forEach((card) => {
         card.addEventListener('click', () => {
           inputEl().value = (card as HTMLElement).dataset.suggestion!;
           autoResize(inputEl());
           sendMessage();
-        })
-      );
+        });
+      });
 
       inputEl().addEventListener('input', () => autoResize(inputEl()));
       inputEl().addEventListener('keydown', (e) => {
@@ -176,6 +284,16 @@ import Composer from '../components/Composer.astro';
       });
       sendBtn().addEventListener('click', sendMessage);
       $('docInput').addEventListener('change', (e) => uploadDoc(e.target as HTMLInputElement));
+
+      window.addEventListener('session:change', async (e: any) => {
+        currentSessionId = e.detail.sessionId;
+        localStorage.setItem('currentSessionId', currentSessionId);
+        await loadHistory(currentSessionId);
+      });
+
+      // Default mode set to Quick Chat (false)
+      setRagMode(false);
+      initSession();
     }
 
     init();

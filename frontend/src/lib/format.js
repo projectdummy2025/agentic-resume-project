@@ -86,11 +86,5 @@ export function renderResult(data) {
     html += `</div>`;
   }
 
-  html += `
-    <button class="json-toggle-btn" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'; this.querySelector('span').textContent = this.nextElementSibling.style.display === 'block' ? 'Sembunyikan Raw JSON' : 'Tampilkan Raw JSON'">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-      <span>Tampilkan Raw JSON</span>
-    </button>
-    <pre class="raw-json-block" style="display:none">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
   return html;
 }
