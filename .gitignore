@@ -11,6 +11,9 @@ venv/
 node_modules/
 npm-debug.log*
 
+# Runtime data (Chroma vector store, generated)
+chroma-data/
+
 # Editor & OS
 .DS_Store
 .vscode/
