@@ -4,40 +4,33 @@
 1. Salin `.env.example` menjadi `.env` di folder root proyek.
 2. Buka `.env` dan isi `GEMINI_API_KEY` dengan kunci API Gemini Anda.
 
-## 2. Menjalankan Backend (Python)
-1. Buka terminal baru dan masuk ke folder `backend`:
+## 2. Menjalankan Backend (Docker)
+Backend berjalan di container (CPU-only, Chroma ONNX + embedding lokal, LLM via Gemini API).
+1. Pastikan Docker & Docker Compose terinstall.
+2. Dari folder root proyek:
    ```bash
-   cd backend
+   docker compose up --build
    ```
-2. Buat virtual environment menggunakan `python` dan aktifkan:
+   *Backend berjalan di `http://localhost:8000`. Vektor tersimpan persisten di `./chroma-data`.*
+3. (Opsional) ingest PDF lewat endpoint:
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # (Di Windows: .venv\Scripts\activate)
+   curl -F "file=@dokumen.pdf" http://localhost:8000/ingest
    ```
-3. Install dependensi:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Jalankan server FastAPI:
-   ```bash
-   uvicorn main:app --reload
-   ```
-   *Server backend akan berjalan di `http://localhost:8000`.*
 
-## 3. Menjalankan Frontend (Node.js)
-1. Buka terminal baru (biarkan terminal backend tetap berjalan) dan masuk ke folder `frontend`:
+## 3. Menjalankan Frontend (Astro)
+1. Buka terminal baru (biarkan backend tetap berjalan) dan masuk ke folder `frontend`:
    ```bash
    cd frontend
    ```
-2. Install dependensi NPM:
+2. Install dependensi:
    ```bash
    npm install
    ```
-3. Jalankan server Express:
+3. Jalankan dev server (proxy `/api` → backend `:8000`):
    ```bash
    npm run dev
    ```
-   *Server frontend akan berjalan di `http://localhost:3000`.*
+   *Frontend berjalan di `http://localhost:3000`. Untuk produksi: `npm run build` lalu `npm run preview`.*
 
 ## 4. Penggunaan
-Buka browser dan akses `http://localhost:3000`. Aplikasi siap digunakan.
+Buka browser dan akses `http://localhost:3000`. Unggah PDF lewat tombol "Unggah" di header untuk mengisi basis pengetahuan RAG.
