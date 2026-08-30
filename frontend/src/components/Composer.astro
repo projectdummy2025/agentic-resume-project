@@ -1,0 +1,33 @@
+---
+const suggestions = [
+  'Apa itu Machine Learning dan bagaimana cara kerjanya?',
+  'Jelaskan perbedaan antara REST API dan GraphQL.',
+  'Berikan rekomendasi langkah belajar pemrograman Web.'
+];
+---
+
+<main id="mainContent">
+  <div class="chat-wrapper" id="chatWrapper">
+    <div class="empty-state" id="emptyState">
+      <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+      <h1>Apa yang ingin Anda tanyakan hari ini?</h1>
+    </div>
+  </div>
+</main>
+
+<div class="footer-container">
+  <div class="suggestion-grid" id="suggestionGrid">
+    {suggestions.map((s) => (
+      <div class="suggestion-card" data-suggestion={s}>{s}</div>
+    ))}
+  </div>
+  <div class="input-box-wrapper">
+    <textarea id="inputText" placeholder="Ketik pesan..." rows="1"></textarea>
+    <button class="send-button" id="sendBtn" aria-label="Kirim Pesan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+    </button>
+  </div>
+  <div class="disclaimer">
+    Chatbot universal berbasis LLM. Hasil disajikan dalam format terstruktur.
+  </div>
+</div>

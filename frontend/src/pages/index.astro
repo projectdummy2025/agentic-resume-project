@@ -1,0 +1,146 @@
+---
+import '../styles/global.css';
+import ChatHeader from '../components/ChatHeader.astro';
+import Composer from '../components/Composer.astro';
+---
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Universal Chatbot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <ChatHeader />
+  <Composer />
+
+  <script>
+    import { analyze, ingestPdf } from '../lib/api';
+    import { renderResult, escapeHtml } from '../lib/format';
+
+    let currentPromptStyle = 'zero-shot';
+    let isChatLocked = false;
+
+    const $ = (id: string) => document.getElementById(id)!;
+    const inputEl = () => $('inputText') as HTMLTextAreaElement;
+    const sendBtn = () => $('sendBtn') as HTMLButtonElement;
+
+    function selectTab(style: string) {
+      if (isChatLocked) return;
+      currentPromptStyle = style;
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', (btn as HTMLElement).dataset.style === style);
+      });
+    }
+
+    function lockTabs() {
+      if (isChatLocked) return;
+      isChatLocked = true;
+      document.querySelectorAll('.tab-btn').forEach((btn) => ((btn as HTMLButtonElement).disabled = true));
+    }
+
+    function autoResize(el: HTMLTextAreaElement) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+    }
+
+    function scrollToBottom() {
+      const main = $('mainContent');
+      main.scrollTop = main.scrollHeight;
+    }
+
+    function hideIntro() {
+      const empty = $('emptyState');
+      const grid = $('suggestionGrid');
+      if (empty) empty.style.display = 'none';
+      if (grid) grid.style.display = 'none';
+    }
+
+    function addUserRow(text: string) {
+      const row = document.createElement('div');
+      row.className = 'message-row user';
+      row.innerHTML = `<div class="user-bubble">${escapeHtml(text)}</div>`;
+      $('chatWrapper').appendChild(row);
+    }
+
+    function addBotRow(): HTMLElement {
+      const row = document.createElement('div');
+      row.className = 'message-row bot';
+      row.innerHTML = `<div class="bot-content"><div class="typing-indicator"><span></span><span></span><span></span></div></div>`;
+      $('chatWrapper').appendChild(row);
+      return row.querySelector('.bot-content') as HTMLElement;
+    }
+
+    async function sendMessage() {
+      const el = inputEl();
+      const text = el.value.trim();
+      if (!text || isChatLocked) return;
+
+      hideIntro();
+      lockTabs();
+      addUserRow(text);
+      const botContent = addBotRow();
+
+      el.value = '';
+      el.style.height = '24px';
+      sendBtn().disabled = true;
+      scrollToBottom();
+
+      try {
+        const data = await analyze(text, currentPromptStyle);
+        botContent.innerHTML = renderResult(data);
+      } catch (err) {
+        botContent.innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml((err as Error).message)}</span>`;
+      } finally {
+        isChatLocked = false;
+        sendBtn().disabled = false;
+        document.querySelectorAll('.tab-btn').forEach((btn) => ((btn as HTMLButtonElement).disabled = false));
+        scrollToBottom();
+      }
+    }
+
+    async function uploadDoc(input: HTMLInputElement) {
+      const file = input.files?.[0];
+      if (!file) return;
+      const label = input.closest('.upload-btn') as HTMLElement;
+      const prev = label.querySelector('span')?.textContent;
+      (label.querySelector('span') as HTMLElement).textContent = 'Mengunggah…';
+      try {
+        const res = await ingestPdf(file);
+        (label.querySelector('span') as HTMLElement).textContent = `✓ ${res.chunks} chunk`;
+      } catch (err) {
+        (label.querySelector('span') as HTMLElement).textContent = 'Gagal';
+        alert((err as Error).message);
+      } finally {
+        setTimeout(() => { if (prev) (label.querySelector('span') as HTMLElement).textContent = prev; }, 2500);
+        input.value = '';
+      }
+    }
+
+    function init() {
+      document.querySelectorAll('.tab-btn').forEach((btn) =>
+        btn.addEventListener('click', () => selectTab((btn as HTMLElement).dataset.style!))
+      );
+      document.querySelectorAll('.suggestion-card').forEach((card) =>
+        card.addEventListener('click', () => {
+          inputEl().value = (card as HTMLElement).dataset.suggestion!;
+          autoResize(inputEl());
+          sendMessage();
+        })
+      );
+      inputEl().addEventListener('input', () => autoResize(inputEl()));
+      inputEl().addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+      });
+      sendBtn().addEventListener('click', sendMessage);
+      $('docInput').addEventListener('change', (e) => uploadDoc(e.target as HTMLInputElement));
+    }
+
+    init();
+  </script>
+</body>
+</html>
