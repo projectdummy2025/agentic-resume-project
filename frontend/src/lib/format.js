@@ -23,13 +23,13 @@ export function renderMarkdown(val) {
 export function renderSources(sumber) {
   const list = Array.isArray(sumber) ? sumber : [sumber];
   const hasUrls = list.some((s) => String(s).trim().startsWith('http'));
-  if (!hasUrls) return `<div>${escapeHtml(asText(sumber))}</div>`;
+  if (!hasUrls) return `<span>${escapeHtml(asText(sumber))}</span>`;
   return (
     `<div class="sources-flex">` +
     list.map((src) => {
       const str = String(src).trim();
       if (!/^https?:\/\//.test(str)) {
-        return `<span class="source-link" style="color: var(--text-primary); background: var(--surface-color); border-color: var(--border-color);">${escapeHtml(str)}</span>`;
+        return `<span class="source-link">${escapeHtml(str)}</span>`;
       }
       try {
         const host = new URL(str).hostname;
@@ -58,27 +58,34 @@ export function renderResult(data) {
       </details>`;
   }
   if (data.jawaban) html += `<div class="result-block">${renderMarkdown(data.jawaban)}</div>`;
-  if (data.topik) {
-    html += `
-      <div class="meta-card">
-        <div class="meta-label">Topik</div>
-        <div class="meta-value">${escapeHtml(asText(data.topik))}</div>
-      </div>`;
+
+  const hasMeta = data.topik || data.sumber || data.dokumen?.length;
+  if (hasMeta) {
+    html += `<div class="meta-chips">`;
+    if (data.topik) {
+      html += `
+        <div class="meta-chip">
+          <span class="chip-label">TOPIK</span>
+          <span class="chip-val">${escapeHtml(asText(data.topik))}</span>
+        </div>`;
+    }
+    if (data.sumber) {
+      html += `
+        <div class="meta-chip">
+          <span class="chip-label">SUMBER</span>
+          <span class="chip-val">${renderSources(data.sumber)}</span>
+        </div>`;
+    }
+    if (data.dokumen?.length) {
+      html += `
+        <div class="meta-chip">
+          <span class="chip-label">RAG DOCS</span>
+          <span class="chip-val">${data.dokumen.map((d) => escapeHtml(d)).join(', ')}</span>
+        </div>`;
+    }
+    html += `</div>`;
   }
-  if (data.sumber) {
-    html += `
-      <div class="meta-card">
-        <div class="meta-label">Sumber</div>
-        <div class="meta-value">${renderSources(data.sumber)}</div>
-      </div>`;
-  }
-  if (data.dokumen?.length) {
-    html += `
-      <div class="meta-card">
-        <div class="meta-label">Dokumen RAG</div>
-        <div class="meta-value">${data.dokumen.map((d) => escapeHtml(d)).join(', ')}</div>
-      </div>`;
-  }
+
   html += `
     <button class="json-toggle-btn" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'; this.querySelector('span').textContent = this.nextElementSibling.style.display === 'block' ? 'Sembunyikan Raw JSON' : 'Tampilkan Raw JSON'">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>

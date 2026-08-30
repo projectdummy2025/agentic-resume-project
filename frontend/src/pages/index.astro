@@ -9,10 +9,10 @@ import Composer from '../components/Composer.astro';
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Universal Chatbot</title>
+  <title>Universal AI Chatbot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
   <ChatHeader />
@@ -28,24 +28,45 @@ import Composer from '../components/Composer.astro';
     const $ = (id: string) => document.getElementById(id)!;
     const inputEl = () => $('inputText') as HTMLTextAreaElement;
     const sendBtn = () => $('sendBtn') as HTMLButtonElement;
+    const modeSelectBtn = () => $('modeSelectBtn') as HTMLButtonElement;
+    const modeMenu = () => $('modeMenu') as HTMLElement;
 
-    function selectTab(style: string) {
+    function toggleModeMenu(show?: boolean) {
       if (isChatLocked) return;
+      const menu = modeMenu();
+      const isVisible = show !== undefined ? show : menu.style.display !== 'flex';
+      menu.style.display = isVisible ? 'flex' : 'none';
+    }
+
+    function selectMode(btn: HTMLElement) {
+      if (isChatLocked) return;
+      const style = btn.dataset.style!;
+      const label = btn.dataset.label!;
       currentPromptStyle = style;
-      document.querySelectorAll('.tab-btn').forEach((btn) => {
-        btn.classList.toggle('active', (btn as HTMLElement).dataset.style === style);
+
+      const iconSource = btn.querySelector('.item-icon-svg')?.innerHTML;
+      const iconEl = $('currentModeIcon');
+      const labelEl = $('currentModeLabel');
+      if (iconEl && iconSource) iconEl.innerHTML = iconSource;
+      if (labelEl) labelEl.textContent = label;
+
+      document.querySelectorAll('.mode-menu-item').forEach((item) => {
+        item.classList.toggle('active', item === btn);
       });
+      toggleModeMenu(false);
     }
 
     function lockTabs() {
       if (isChatLocked) return;
       isChatLocked = true;
-      document.querySelectorAll('.tab-btn').forEach((btn) => ((btn as HTMLButtonElement).disabled = true));
+      modeSelectBtn().disabled = true;
+      toggleModeMenu(false);
     }
 
     function autoResize(el: HTMLTextAreaElement) {
       el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+      el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+      sendBtn().disabled = !el.value.trim() || isChatLocked;
     }
 
     function scrollToBottom() {
@@ -86,7 +107,7 @@ import Composer from '../components/Composer.astro';
       const botContent = addBotRow();
 
       el.value = '';
-      el.style.height = '24px';
+      el.style.height = 'auto';
       sendBtn().disabled = true;
       scrollToBottom();
 
@@ -98,7 +119,7 @@ import Composer from '../components/Composer.astro';
       } finally {
         isChatLocked = false;
         sendBtn().disabled = false;
-        document.querySelectorAll('.tab-btn').forEach((btn) => ((btn as HTMLButtonElement).disabled = false));
+        modeSelectBtn().disabled = false;
         scrollToBottom();
       }
     }
@@ -106,32 +127,49 @@ import Composer from '../components/Composer.astro';
     async function uploadDoc(input: HTMLInputElement) {
       const file = input.files?.[0];
       if (!file) return;
-      const label = input.closest('.upload-btn') as HTMLElement;
-      const prev = label.querySelector('span')?.textContent;
-      (label.querySelector('span') as HTMLElement).textContent = 'Mengunggah…';
+      const labelText = $('uploadLabelText');
+      const prevText = labelText ? labelText.textContent : 'Lampirkan PDF';
+      if (labelText) labelText.textContent = 'Mengunggah…';
       try {
         const res = await ingestPdf(file);
-        (label.querySelector('span') as HTMLElement).textContent = `✓ ${res.chunks} chunk`;
+        if (labelText) labelText.textContent = `✓ ${res.chunks} chunk`;
       } catch (err) {
-        (label.querySelector('span') as HTMLElement).textContent = 'Gagal';
+        if (labelText) labelText.textContent = 'Gagal';
         alert((err as Error).message);
       } finally {
-        setTimeout(() => { if (prev) (label.querySelector('span') as HTMLElement).textContent = prev; }, 2500);
+        setTimeout(() => { if (labelText && prevText) labelText.textContent = prevText; }, 3000);
         input.value = '';
       }
     }
 
     function init() {
-      document.querySelectorAll('.tab-btn').forEach((btn) =>
-        btn.addEventListener('click', () => selectTab((btn as HTMLElement).dataset.style!))
-      );
-      document.querySelectorAll('.suggestion-card').forEach((card) =>
+      modeSelectBtn().addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleModeMenu();
+      });
+
+      document.querySelectorAll('.mode-menu-item').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectMode(btn as HTMLElement);
+        });
+      });
+
+      document.addEventListener('click', (e) => {
+        const target = e.target as Node;
+        if (!modeSelectBtn().contains(target) && !modeMenu().contains(target)) {
+          toggleModeMenu(false);
+        }
+      });
+
+      document.querySelectorAll('.suggestion-pill').forEach((card) =>
         card.addEventListener('click', () => {
           inputEl().value = (card as HTMLElement).dataset.suggestion!;
           autoResize(inputEl());
           sendMessage();
         })
       );
+
       inputEl().addEventListener('input', () => autoResize(inputEl()));
       inputEl().addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
