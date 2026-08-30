@@ -1,18 +1,20 @@
 import os
 import json
 import asyncio
-from fastapi import FastAPI, HTTPException, UploadFile, File
+import uuid
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
 import rag
+import sessions
+from prompts import get_system_prompt, build_chat_system_prompt
+from schemas import QueryRequest, SessionCreate
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 app = FastAPI()
+sessions.init_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,24 +24,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = genai.Client()
-
-class QueryRequest(BaseModel):
-    text: str
-    prompt_style: str = "zero-shot"
-
-def get_system_prompt(style: str, context: str = "") -> str:
-    base = "Kamu adalah asisten cerdas yang serbaguna. Output WAJIB dalam format JSON valid dengan key: 'jawaban', 'topik', 'sumber' (jika relevan). Format isi 'jawaban' menggunakan Markdown yang rapi (gunakan baris baru '\\n\\n' antar paragraf, dan '\\n- ' atau '\\n1. ' untuk poin-poin agar tidak menumpuk dalam satu paragraf)."
-    if context:
-        base += f"\n\nGunakan KONTEKS berikut dari dokumen pengguna untuk menjawab, dan sebutkan sumbernya di key 'sumber':\n---\n{context}\n---"
-    if style == "few-shot":
-        return base + "\nContoh: Input: 'Apa itu machine learning?', Output: {\"jawaban\": \"Machine Learning adalah cabang AI.\\n\\nTahapan utama:\\n1. Pengumpulan Data\\n2. Pelatihan Model\", \"topik\": \"AI/ML\", \"sumber\": \"Definisi umum\"}"
-    if style == "cot":
-        return base + "\nPikirkan langkah-demi-langkah sebelum menjawab, letakkan pemikiranmu di key 'reasoning' dalam JSON."
-    return base
 
 @app.post("/ingest")
-async def ingest(file: UploadFile = File(...)):
+async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
     try:
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Hanya file PDF yang didukung")
@@ -47,36 +34,144 @@ async def ingest(file: UploadFile = File(...)):
         from io import BytesIO
         reader = pypdf.PdfReader(BytesIO(await file.read()))
         text = "\n".join((p.extract_text() or "") for p in reader.pages)
-        n = await asyncio.to_thread(rag.ingest, file.filename, text)
+        n = await asyncio.to_thread(rag.ingest, session_id, file.filename, text)
+        
+        session = sessions.get_session(session_id)
+        if not session:
+            sessions.create_session(session_id, file.filename)
+        elif session.get("title") == "Untitled":
+            sessions.rename_session(session_id, file.filename)
+            
         return {"filename": file.filename, "chunks": n}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/analyze")
-async def analyze(req: QueryRequest):
-    try:
-        model_name = os.getenv("MODEL_NAME", "gemma-4-26b-a4b-it")
-        docs = await asyncio.to_thread(rag.retrieve, req.text)
-        context = "\n\n".join(f"[{d['source']}]\n{d['text']}" for d in docs)
-        system_instruction = await asyncio.to_thread(get_system_prompt, req.prompt_style, context)
 
-        def _call_api():
-            return client.models.generate_content(
+@app.post("/session")
+async def create_session(req: SessionCreate):
+    session_id = req.session_id or str(uuid.uuid4())
+    sessions.create_session(session_id, req.title)
+    return {"session_id": session_id}
+
+
+@app.get("/sessions")
+async def list_sessions():
+    return sessions.list_sessions()
+
+
+@app.get("/session/{session_id}/messages")
+async def get_messages(session_id: str):
+    session = sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"session": session, "messages": sessions.get_messages(session_id)}
+
+
+@app.post("/session/{session_id}/rename")
+async def rename_session(session_id: str, title: str):
+    session = sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    sessions.rename_session(session_id, title)
+    return {"ok": True}
+
+
+@app.delete("/session/{session_id}")
+async def delete_session(session_id: str):
+    session = sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    sessions.delete_session(session_id)
+    return {"ok": True}
+
+
+@app.post("/chat")
+async def chat(req: QueryRequest):
+    try:
+        session = sessions.get_session(req.session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+            
+        # Auto-rename session if it has default title
+        if session.get("title") in ("Untitled", "Sesi Baru"):
+            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
+            sessions.rename_session(req.session_id, title)
+
+        history = sessions.get_messages(req.session_id)
+        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
+        system_instruction = build_chat_system_prompt(req.prompt_style, history_text)
+        from google import genai
+        from google.genai import types
+        from dotenv import load_dotenv
+        import os
+        load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+        client = genai.Client()
+        model_name = os.getenv("MODEL_NAME", "gemma-4-26b-a4b-it")
+        sessions.add_message(req.session_id, "user", req.text)
+        response = await asyncio.to_thread(
+            lambda: client.models.generate_content(
                 model=model_name,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
                     response_mime_type="application/json",
-                    temperature=0.7
+                    temperature=0.7,
                 ),
-                contents=req.text
+                contents=req.text,
             )
+        )
+        result = json.loads(response.text)
+        sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        response = await asyncio.to_thread(_call_api)
+
+@app.post("/analyze")
+async def analyze(req: QueryRequest):
+    try:
+        session = sessions.get_session(req.session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Auto-rename session if it has default title
+        if session.get("title") in ("Untitled", "Sesi Baru"):
+            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
+            sessions.rename_session(req.session_id, title)
+
+        history = sessions.get_messages(req.session_id)
+        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
+        docs = await asyncio.to_thread(rag.retrieve, req.session_id, req.text)
+        context = "\n\n".join(f"[{d['source']}]\n{d['text']}" for d in docs)
+        system_instruction = get_system_prompt(req.prompt_style, context)
+        from google import genai
+        from google.genai import types
+        from dotenv import load_dotenv
+        import os
+        load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+        client = genai.Client()
+        model_name = os.getenv("MODEL_NAME", "gemma-4-26b-a4b-it")
+        sessions.add_message(req.session_id, "user", req.text)
+        response = await asyncio.to_thread(
+            lambda: client.models.generate_content(
+                model=model_name,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    temperature=0.7,
+                ),
+                contents=req.text,
+            )
+        )
         result = json.loads(response.text)
         if docs:
             result["dokumen"] = sorted({d["source"] for d in docs})
+        sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
