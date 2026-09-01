@@ -165,7 +165,7 @@ const suggestions = [
         const api = useRag ? analyze : chat;
         const data = await api(text, currentPromptStyle, currentSessionId);
         botContent.innerHTML = renderResult(data);
-        window.dispatchEvent(new CustomEvent('session:refresh'));
+        window.dispatchEvent(new CustomEvent('session:refresh', { detail: { sessionId: currentSessionId } }));
       } catch (err) {
         botContent.innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml((err as Error).message)}</span>`;
       } finally {
@@ -202,9 +202,8 @@ const suggestions = [
           }
         }
         scrollToBottom();
-      } catch {
-        chatWrapper.innerHTML = '';
-        showIntro();
+      } catch (err) {
+        chatWrapper.innerHTML = `<div class="error-state">Gagal memuat percakapan: ${escapeHtml((err as Error).message)}</div>`;
       }
     }
 

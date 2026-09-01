@@ -6,18 +6,33 @@ async function request(path, options = {}) {
     throw new Error('Sesi ini belum disimpan.');
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error('Sesi tidak ditemukan atau belum disimpan.');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      ...options,
+    });
+    clearTimeout(timeout);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 404) {
+        throw new Error('Sesi tidak ditemukan atau belum disimpan.');
+      }
+      throw new Error(data.detail || 'Gagal memproses permintaan');
     }
-    throw new Error(data.detail || 'Gagal memproses permintaan');
+    return data;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Permintaan timeout');
+    }
+    if (options.retry && err instanceof TypeError) {
+      return request(path, { ...options, retry: false });
+    }
+    throw err;
   }
-  return data;
 }
 
 export async function createSession(sessionId = null, title = null) {
