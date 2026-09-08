@@ -6,8 +6,7 @@ import traceback
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 import rag
 import sessions
@@ -18,6 +17,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 app = FastAPI()
 sessions.init_db()
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai_compat")
+OPENAI_COMPATIBLE_API_KEY = os.getenv("OPENAI_COMPATIBLE_API_KEY", "")
+OPENAI_COMPATIBLE_BASE_URL = os.getenv("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:8000/v1")
+OPENAI_COMPATIBLE_MODEL = os.getenv("OPENAI_COMPATIBLE_MODEL", "gpt-4o-mini")
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,6 +54,22 @@ async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def call_llm(system_instruction: str, user_message: str):
+    client = OpenAI(
+        api_key=OPENAI_COMPATIBLE_API_KEY,
+        base_url=OPENAI_COMPATIBLE_BASE_URL,
+    )
+    return client.chat.completions.create(
+        model=OPENAI_COMPATIBLE_MODEL,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=0.7,
+    )
 
 
 @app.post("/session")
@@ -89,14 +109,13 @@ async def delete_session(session_id: str):
     sessions.delete_session(session_id)
     return {"ok": True}
 
-
 @app.post("/chat")
 async def chat(req: QueryRequest):
     try:
         session = sessions.get_session(req.session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
-            
+        
         # Auto-rename session if it has default title
         if session.get("title") in ("Untitled", "Sesi Baru"):
             title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
@@ -106,22 +125,13 @@ async def chat(req: QueryRequest):
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
         system_instruction = build_chat_system_prompt(req.prompt_style, history_text)
         
-        client = genai.Client()
-        model_name = os.getenv("MODEL_NAME", "gemma-4-26b-a4b-it")
         sessions.add_message(req.session_id, "user", req.text)
-        
-        response = await asyncio.to_thread(
-            lambda: client.models.generate_content(
-                model=model_name,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    temperature=0.7,
-                ),
-                contents=req.text,
-            )
-        )
-        result = json.loads(response.text)
+
+        response = call_llm(system_instruction, req.text)
+
+        content = response.choices[0].message.content
+        result = json.loads(content)
+
         sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
         return result
     except HTTPException:
@@ -150,22 +160,13 @@ async def analyze(req: QueryRequest):
         context = "\n\n".join(f"[{d['source']}]\n{d['text']}" for d in docs)
         system_instruction = get_system_prompt(req.prompt_style, context)
         
-        client = genai.Client()
-        model_name = os.getenv("MODEL_NAME", "gemma-4-26b-a4b-it")
         sessions.add_message(req.session_id, "user", req.text)
-        
-        response = await asyncio.to_thread(
-            lambda: client.models.generate_content(
-                model=model_name,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    temperature=0.7,
-                ),
-                contents=req.text,
-            )
-        )
-        result = json.loads(response.text)
+
+        response = call_llm(system_instruction, req.text)
+
+        content = response.choices[0].message.content
+        result = json.loads(content)
+
         if docs:
             result["dokumen"] = sorted({d["source"] for d in docs})
         sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
