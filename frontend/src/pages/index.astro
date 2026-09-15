@@ -110,8 +110,17 @@ const suggestions = [
         return;
       }
 
+      // Extract unique clean document filenames (strip page tags if present)
+      const cleanDocs = Array.from(new Set(documents.map(d => d.replace(/\s*\(hal\.\s*\d+\)$/i, '').trim()))).filter(Boolean);
+
+      if (cleanDocs.length === 0) {
+        bar.style.display = 'none';
+        list.innerHTML = '';
+        return;
+      }
+
       bar.style.display = 'block';
-      list.innerHTML = documents.map(doc => `
+      list.innerHTML = cleanDocs.map(doc => `
         <span class="doc-badge-item" title="${escapeHtml(doc)}">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           <span>${escapeHtml(doc)}</span>
@@ -235,6 +244,8 @@ const suggestions = [
           showIntro();
           return;
         }
+
+        hideIntro();
 
         for (const msg of data.messages) {
           if (msg.role === 'user') {
