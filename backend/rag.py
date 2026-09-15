@@ -7,13 +7,23 @@ from rank_bm25 import BM25Okapi
 from flashrank import Ranker, RerankRequest
 
 CHROMA_DIR = os.getenv("CHROMA_DIR", "/data/chroma")
+MAX_BM25_SESSIONS = 50
 
 # In-memory store for BM25 indexes per session
 # Format: { session_id: { "bm25": BM25Okapi, "chunks": list[dict] } }
 _BM25_STORES: dict[str, dict] = {}
 
-# Singleton for FlashRank CPU Ranker
+# Singleton instances
+_CHROMA_CLIENT = None
 _FLASHRANK_RANKER = None
+
+
+def _client():
+    global _CHROMA_CLIENT
+    if _CHROMA_CLIENT is None:
+        os.makedirs(CHROMA_DIR, exist_ok=True)
+        _CHROMA_CLIENT = PersistentClient(path=CHROMA_DIR, settings=Settings(anonymized_telemetry=False))
+    return _CHROMA_CLIENT
 
 
 def _get_ranker():
@@ -23,10 +33,6 @@ def _get_ranker():
         os.makedirs(cache_dir, exist_ok=True)
         _FLASHRANK_RANKER = Ranker(model_name="ms-marco-TinyBERT-L-2-v2", cache_dir=cache_dir)
     return _FLASHRANK_RANKER
-
-
-def _client():
-    return PersistentClient(path=CHROMA_DIR, settings=Settings(anonymized_telemetry=False))
 
 
 def _collection(session_id: str):
@@ -86,8 +92,16 @@ def _recursive_chunk(text: str, chunk_size: int = 400, overlap: int = 60) -> lis
     return chunks_with_overlap
 
 
+def _save_bm25_store(session_id: str, store: dict):
+    # Enforce memory cap on in-memory dictionary to prevent memory leak
+    if len(_BM25_STORES) >= MAX_BM25_SESSIONS and session_id not in _BM25_STORES:
+        oldest_key = next(iter(_BM25_STORES))
+        del _BM25_STORES[oldest_key]
+    _BM25_STORES[session_id] = store
+
+
 def _ensure_bm25_store(session_id: str) -> dict | None:
-    """Auto-rebuild BM25 store from ChromaDB if not present in memory (e.g. server restart)."""
+    """Auto-rebuild BM25 store from ChromaDB if not present in memory (e.g. server restart or eviction)."""
     if session_id in _BM25_STORES:
         return _BM25_STORES[session_id]
 
@@ -118,7 +132,7 @@ def _ensure_bm25_store(session_id: str) -> dict | None:
         "bm25": bm25_index,
         "chunks": chunks
     }
-    _BM25_STORES[session_id] = store
+    _save_bm25_store(session_id, store)
     return store
 
 
@@ -187,10 +201,10 @@ def ingest_pdf_pages(session_id: str, filename: str, pages: list[dict]) -> int:
     corpus_tokens = [_tokenize(c["text"]) for c in combined_chunks]
     bm25_index = BM25Okapi(corpus_tokens) if corpus_tokens else None
 
-    _BM25_STORES[session_id] = {
+    _save_bm25_store(session_id, {
         "bm25": bm25_index,
         "chunks": combined_chunks
-    }
+    })
 
     return len(all_chunks)
 
