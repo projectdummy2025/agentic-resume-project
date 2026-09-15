@@ -6,3 +6,6 @@ python-dotenv
 chromadb
 pypdf
 python-multipart
+rank-bm25
+flashrank
+onnxruntime
