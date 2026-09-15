@@ -82,19 +82,24 @@ def condense_query(query: str, history_text: str) -> str:
             temperature=0.2,
             max_tokens=80,
         )
-        condensed = res.choices[0].message.content.strip()
-        return condensed or query
+        if res.choices and res.choices[0].message and res.choices[0].message.content:
+            condensed = res.choices[0].message.content.strip()
+            return condensed or query
+        return query
     except Exception as e:
         print(f"Query condensation fallback: {e}")
         return query
 
 
 def enrichQuery(userQuery: str, sessionId: str) -> str:
-    # Always append document sources to retrieval query to anchor RAG search to document context
-    documentSources = rag.get_document_sources(sessionId)
-    if documentSources:
-        sourceString = " ".join(documentSources)
-        return f"{userQuery} {sourceString}"
+    # Only append document sources if user query is a summary/meta question or short query
+    summaryKeywords = ["dibahas", "isi", "ringkasan", "rangkum", "tentang", "overview", "summary", "bahan", "topik"]
+    isSummaryRequest = any(keyword in userQuery.lower() for keyword in summaryKeywords) or len(userQuery.split()) < 4
+    if isSummaryRequest:
+        documentSources = rag.get_document_sources(sessionId)
+        if documentSources:
+            sourceString = " ".join(documentSources)
+            return f"{userQuery} {sourceString}"
     return userQuery
 
 
@@ -238,23 +243,25 @@ async def chat_stream(req: QueryRequest):
                 context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
 
             context = "\n\n---\n\n".join(context_parts)
-            system_prompt = get_system_prompt(req.prompt_style, context, history_text)
+            system_prompt = get_system_prompt(req.prompt_style, context)
             if docs:
                 doc_refs = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
         else:
-            system_prompt = build_chat_system_prompt(req.prompt_style, history_text)
+            system_prompt = build_chat_system_prompt(req.prompt_style)
 
         async def sse_generator():
             full_text = ""
             persisted = False
             try:
                 client = get_openai_client()
+                api_messages = [{"role": "system", "content": system_prompt}]
+                for m in history[-6:]:
+                    api_messages.append({"role": m["role"], "content": m["content"]})
+                api_messages.append({"role": "user", "content": req.text})
+
                 response = client.chat.completions.create(
                     model=OPENAI_COMPATIBLE_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": req.text},
-                    ],
+                    messages=api_messages,
                     temperature=0.7,
                     stream=True,
                 )
@@ -263,6 +270,9 @@ async def chat_stream(req: QueryRequest):
                     yield f"data: {json.dumps({'documents': doc_refs})}\n\n"
 
                 for chunk in response:
+                    # Guard against empty choices in stream chunk
+                    if not chunk.choices:
+                        continue
                     delta = chunk.choices[0].delta.content or ""
                     if delta:
                         full_text += delta
@@ -326,17 +336,39 @@ async def chat(req: QueryRequest):
                 context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
 
             context = "\n\n---\n\n".join(context_parts)
-            system_instruction = get_system_prompt(req.prompt_style, context, history_text)
-            response = call_llm(system_instruction, req.text)
-            content = response.choices[0].message.content or ""
+            system_instruction = get_system_prompt(req.prompt_style, context)
+            api_messages = [{"role": "system", "content": system_instruction}]
+            for m in history[-6:]:
+                api_messages.append({"role": m["role"], "content": m["content"]})
+            api_messages.append({"role": "user", "content": req.text})
+
+            response = get_openai_client().chat.completions.create(
+                model=OPENAI_COMPATIBLE_MODEL,
+                messages=api_messages,
+                temperature=0.7,
+            )
+            content = ""
+            if response.choices and response.choices[0].message:
+                content = response.choices[0].message.content or ""
 
             result = {"jawaban": content}
             if docs:
                 result["dokumen"] = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
         else:
-            system_instruction = build_chat_system_prompt(req.prompt_style, history_text)
-            response = call_llm(system_instruction, req.text)
-            content = response.choices[0].message.content or ""
+            system_instruction = build_chat_system_prompt(req.prompt_style)
+            api_messages = [{"role": "system", "content": system_instruction}]
+            for m in history[-6:]:
+                api_messages.append({"role": m["role"], "content": m["content"]})
+            api_messages.append({"role": "user", "content": req.text})
+
+            response = get_openai_client().chat.completions.create(
+                model=OPENAI_COMPATIBLE_MODEL,
+                messages=api_messages,
+                temperature=0.7,
+            )
+            content = ""
+            if response.choices and response.choices[0].message:
+                content = response.choices[0].message.content or ""
             result = {"jawaban": content}
 
         sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
