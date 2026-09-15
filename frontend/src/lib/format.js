@@ -30,13 +30,19 @@ export function renderMarkdown(val) {
 
   // Auto-fix inline list numbering " text 1. Item" -> linebreaks
   str = str.replace(/(\s)(\d+\.\s+[A-Z])/g, '\n\n$2');
+
+  // Convert raw source brackets [Sumber: doc.pdf | Halaman: X] into sleek UI badges
+  str = str.replace(/\[Sumber:\s*([^|\]]+)\s*\|\s*Halaman:\s*(\d+)\]/gi, (match, docName, pageNum) => {
+    return `<span class="inline-citation"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span class="cite-name">${escapeHtml(docName.trim())}</span><span class="cite-page">hal. ${pageNum}</span></span>`;
+  });
+
   return marked.parse(str);
 }
 
 export function renderSources(sumber) {
   const list = Array.isArray(sumber) ? sumber : [sumber];
   const hasUrls = list.some((s) => String(s).trim().startsWith('http'));
-  if (!hasUrls) return `<span>${escapeHtml(asText(sumber))}</span>`;
+  if (!hasUrls) return `<span class="chip-source-item">${escapeHtml(asText(sumber))}</span>`;
   return (
     `<div class="sources-flex">` +
     list.map((src) => {
@@ -72,32 +78,17 @@ export function renderResult(data) {
   }
   if (data.jawaban) html += `<div class="result-block">${renderMarkdown(data.jawaban)}</div>`;
 
-  const hasMeta = data.topik || data.sumber || data.dokumen?.length;
-  if (hasMeta) {
-    html += `<div class="meta-chips">`;
-    if (data.topik) {
-      html += `
+  if (data.topik) {
+    html += `
+      <div class="meta-chips">
         <div class="meta-chip">
           <span class="chip-label">TOPIK</span>
           <span class="chip-val">${escapeHtml(asText(data.topik))}</span>
-        </div>`;
-    }
-    if (data.sumber) {
-      html += `
-        <div class="meta-chip">
-          <span class="chip-label">SUMBER</span>
-          <span class="chip-val">${renderSources(data.sumber)}</span>
-        </div>`;
-    }
-    if (data.dokumen?.length) {
-      html += `
-        <div class="meta-chip">
-          <span class="chip-label">RAG DOCS</span>
-          <span class="chip-val">${data.dokumen.map((d) => escapeHtml(d)).join(', ')}</span>
-        </div>`;
-    }
-    html += `</div>`;
+        </div>
+      </div>`;
   }
 
   return html;
 }
+
+
