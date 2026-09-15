@@ -62,7 +62,7 @@ const suggestions = [
   </div>
 
   <script>
-    import { createSession, getMessages, chatStream, ingestPdf, getSessionDocuments } from '../lib/api';
+    import { createSession, getMessages, chatStream, ingestPdf } from '../lib/api';
     import { renderResult, renderMarkdown, escapeHtml } from '../lib/format';
 
     let currentPromptStyle = 'zero-shot';
@@ -160,7 +160,7 @@ const suggestions = [
       sendBtn().disabled = true;
       scrollToBottom();
 
-      // Persist draft session on backend before sending message
+      // Persist draft session on backend before sending message if ID is a draft
       if (!currentSessionId || currentSessionId.startsWith('draft-')) {
         try {
           const targetId = currentSessionId || ('draft-' + Math.random().toString(36).substring(2, 15));
@@ -193,6 +193,7 @@ const suggestions = [
           },
           (docs) => {
             activeDocuments = docs;
+            updateDocBadges(docs);
           },
           (fullText) => {
             let resultObj: any = { jawaban: fullText || streamedText };
@@ -245,7 +246,12 @@ const suggestions = [
         }
         scrollToBottom();
       } catch (err) {
-        chatWrapper.innerHTML = `<div class="error-state">Gagal memuat percakapan: ${escapeHtml((err as Error).message)}</div>`;
+        // If session ID was deleted or missing from backend, gracefully reset to a new draft session
+        currentSessionId = 'draft-' + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('currentSessionId', currentSessionId);
+        chatWrapper.innerHTML = '';
+        updateDocBadges([]);
+        showIntro();
       }
     }
 
