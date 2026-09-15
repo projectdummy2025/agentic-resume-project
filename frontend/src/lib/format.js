@@ -12,6 +12,12 @@ function asText(val) {
   return String(val);
 }
 
+// Clean page tags (e.g. "doc.pdf (hal. 3)" -> "doc.pdf")
+export function cleanDocumentName(docName) {
+  if (!docName) return '';
+  return String(docName).replace(/\s*\(hal\.\s*\d+\)$/i, '').trim();
+}
+
 export function renderMarkdown(val) {
   if (!val) return '';
   let str = asText(val).trim();
@@ -37,31 +43,6 @@ export function renderMarkdown(val) {
   return marked.parse(str);
 }
 
-export function renderSources(sumber) {
-  const list = Array.isArray(sumber) ? sumber : [sumber];
-  const hasUrls = list.some((s) => String(s).trim().startsWith('http'));
-  if (!hasUrls) return `<span class="chip-source-item">${escapeHtml(asText(sumber))}</span>`;
-  return (
-    `<div class="sources-flex">` +
-    list.map((src) => {
-      const str = String(src).trim();
-      if (!/^https?:\/\//.test(str)) {
-        return `<span class="source-link">${escapeHtml(str)}</span>`;
-      }
-      try {
-        const host = new URL(str).hostname;
-        return `<a href="${escapeHtml(str)}" target="_blank" rel="noopener" class="source-link">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-          ${escapeHtml(host)}
-        </a>`;
-      } catch {
-        return `<a href="${escapeHtml(str)}" target="_blank" rel="noopener" class="source-link">${escapeHtml(str)}</a>`;
-      }
-    }).join('') +
-    `</div>`
-  );
-}
-
 export function renderResult(data) {
   let html = '';
   if (data.reasoning) {
@@ -78,27 +59,17 @@ export function renderResult(data) {
 
   const sourcesList = data.dokumen || (data.sumber ? (Array.isArray(data.sumber) ? data.sumber : [data.sumber]) : []);
   if (sourcesList.length > 0) {
-    const docPills = sourcesList.map((d) => `
-      <span class="inline-citation">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        <span class="cite-name">${escapeHtml(String(d))}</span>
-      </span>
-    `).join('');
-    html += `<div class="sources-under-chat">${docPills}</div>`;
-  }
-
-  if (data.topik) {
-    html += `
-      <div class="meta-chips">
-        <div class="meta-chip">
-          <span class="chip-label">TOPIK</span>
-          <span class="chip-val">${escapeHtml(asText(data.topik))}</span>
-        </div>
-      </div>`;
+    const cleanList = Array.from(new Set(sourcesList.map(cleanDocumentName))).filter(Boolean);
+    if (cleanList.length > 0) {
+      const docPills = cleanList.map((d) => `
+        <span class="inline-citation">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="cite-name">${escapeHtml(d)}</span>
+        </span>
+      `).join('');
+      html += `<div class="sources-under-chat">${docPills}</div>`;
+    }
   }
 
   return html;
 }
-
-
-
