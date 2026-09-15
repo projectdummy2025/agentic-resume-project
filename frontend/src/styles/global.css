@@ -1099,3 +1099,36 @@ pre.raw-json-block {
 .app-container.sidebar-collapsed .sidebar .session-loading {
     display: none;
 }
+/* Document Badges Bar */
+.doc-badge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+}
+
+.doc-badge-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    color: var(--text-secondary, #94a3b8);
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+}
+
+.doc-badge-item:hover {
+    color: var(--text-primary, #f8fafc);
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.doc-badge-item svg {
+    color: #38bdf8;
+}
