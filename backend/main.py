@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from openai import OpenAI
+import pypdf.errors
 
 import rag
 import sessions
@@ -77,12 +78,19 @@ async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
         import pypdf
         from io import BytesIO
 
-        reader = pypdf.PdfReader(BytesIO(await file.read()))
-        pages = []
-        for idx, page in enumerate(reader.pages):
-            text = page.extract_text() or ""
-            if text.strip():
-                pages.append({"page": idx + 1, "text": text})
+        content = await file.read()
+        try:
+            reader = pypdf.PdfReader(BytesIO(content))
+            pages = []
+            for idx, page in enumerate(reader.pages):
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append({"page": idx + 1, "text": text})
+        except (pypdf.errors.PdfReadError, pypdf.errors.FileNotDecryptedError) as pdf_err:
+            raise HTTPException(status_code=400, detail=f"Gagal membaca PDF: {str(pdf_err)}")
+
+        if not pages:
+            raise HTTPException(status_code=400, detail="Dokumen PDF kosong atau tidak berisi teks yang dapat dibaca.")
 
         n = await asyncio.to_thread(rag.ingest_pdf_pages, session_id, file.filename, pages)
 
