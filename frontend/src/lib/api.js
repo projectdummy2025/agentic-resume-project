@@ -53,19 +53,11 @@ export async function getMessages(sessionId) {
   return request(`/session/${sessionId}/messages`, { method: 'GET' });
 }
 
-export async function getSessionDocuments(sessionId) {
-  return request(`/session/${sessionId}/documents`, { method: 'GET' });
-}
-
 export async function chat(text, promptStyle, sessionId) {
   return request('/chat', {
     method: 'POST',
     body: JSON.stringify({ text, prompt_style: promptStyle, session_id: sessionId }),
   });
-}
-
-export async function analyze(text, promptStyle, sessionId) {
-  return chat(text, promptStyle, sessionId);
 }
 
 export async function chatStream(text, promptStyle, sessionId, onChunk, onDocuments, onDone, onError) {
