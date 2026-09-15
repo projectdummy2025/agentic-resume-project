@@ -34,8 +34,9 @@ app.add_middleware(
 
 
 def get_openai_client():
+    api_key = OPENAI_COMPATIBLE_API_KEY.strip() if OPENAI_COMPATIBLE_API_KEY else "dummy_api_key"
     return OpenAI(
-        api_key=OPENAI_COMPATIBLE_API_KEY,
+        api_key=api_key,
         base_url=OPENAI_COMPATIBLE_BASE_URL,
     )
 
@@ -128,7 +129,7 @@ async def get_messages(session_id: str):
 async def get_session_documents(session_id: str):
     session = sessions.get_session(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        return {"documents": []}
     return {"documents": rag.get_document_sources(session_id)}
 
 
@@ -169,10 +170,10 @@ async def chat_stream(req: QueryRequest):
     try:
         session = sessions.get_session(req.session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        # Auto-rename session if default title
-        if session.get("title") in ("Untitled", "Sesi Baru"):
+            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
+            sessions.create_session(req.session_id, title or "Sesi Baru")
+            session = sessions.get_session(req.session_id)
+        elif session.get("title") in ("Untitled", "Sesi Baru"):
             title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
             sessions.rename_session(req.session_id, title)
 
@@ -202,32 +203,34 @@ async def chat_stream(req: QueryRequest):
             system_prompt = build_chat_system_prompt(req.prompt_style, history_text)
 
         async def sse_generator():
-            client = get_openai_client()
-            response = client.chat.completions.create(
-                model=OPENAI_COMPATIBLE_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": req.text},
-                ],
-                temperature=0.7,
-                stream=True,
-            )
+            try:
+                client = get_openai_client()
+                response = client.chat.completions.create(
+                    model=OPENAI_COMPATIBLE_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": req.text},
+                    ],
+                    temperature=0.7,
+                    stream=True,
+                )
 
-            full_text = ""
-            # Send initial metadata if documents exist
-            if doc_refs:
-                yield f"data: {json.dumps({'documents': doc_refs})}\n\n"
+                full_text = ""
+                if doc_refs:
+                    yield f"data: {json.dumps({'documents': doc_refs})}\n\n"
 
-            for chunk in response:
-                delta = chunk.choices[0].delta.content or ""
-                if delta:
-                    full_text += delta
-                    yield f"data: {json.dumps({'chunk': delta})}\n\n"
-                await asyncio.sleep(0.01)
+                for chunk in response:
+                    delta = chunk.choices[0].delta.content or ""
+                    if delta:
+                        full_text += delta
+                        yield f"data: {json.dumps({'chunk': delta})}\n\n"
+                    await asyncio.sleep(0.005)
 
-            # Persist assistant response
-            sessions.add_message(req.session_id, "assistant", full_text)
-            yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
+                sessions.add_message(req.session_id, "assistant", full_text)
+                yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
+            except Exception as stream_err:
+                print(f"Error in SSE stream: {stream_err}")
+                yield f"data: {json.dumps({'error': str(stream_err), 'done': True})}\n\n"
 
         return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
@@ -244,9 +247,10 @@ async def chat(req: QueryRequest):
     try:
         session = sessions.get_session(req.session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        if session.get("title") in ("Untitled", "Sesi Baru"):
+            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
+            sessions.create_session(req.session_id, title or "Sesi Baru")
+            session = sessions.get_session(req.session_id)
+        elif session.get("title") in ("Untitled", "Sesi Baru"):
             title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
             sessions.rename_session(req.session_id, title)
 
