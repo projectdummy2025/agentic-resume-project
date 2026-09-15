@@ -207,7 +207,8 @@ const suggestions = [
           (fullText) => {
             let resultObj: any = { jawaban: fullText || streamedText };
             if (activeDocuments && activeDocuments.length > 0) {
-              resultObj.dokumen = activeDocuments;
+              const cleanActive = Array.from(new Set(activeDocuments.map(d => d.replace(/\s*\(hal\.\s*\d+\)$/i, '').trim()))).filter(Boolean);
+              resultObj.dokumen = cleanActive;
             }
             botContent.innerHTML = renderResult(resultObj);
             window.dispatchEvent(new CustomEvent('session:refresh', { detail: { sessionId: currentSessionId } }));
@@ -247,12 +248,17 @@ const suggestions = [
 
         hideIntro();
 
+        const cleanDocs = Array.from(new Set((data.documents || []).map(d => d.replace(/\s*\(hal\.\s*\d+\)$/i, '').trim()))).filter(Boolean);
+
         for (const msg of data.messages) {
           if (msg.role === 'user') {
             addUserRow(msg.content);
           } else {
             const botContent = addBotRow();
-            botContent.innerHTML = renderResult({ jawaban: msg.content });
+            botContent.innerHTML = renderResult({
+              jawaban: msg.content,
+              dokumen: cleanDocs.length > 0 ? cleanDocs : undefined
+            });
           }
         }
         scrollToBottom();

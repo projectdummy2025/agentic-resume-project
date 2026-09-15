@@ -1151,13 +1151,25 @@ pre.raw-json-block {
 }
 
 
+/* Minimalist Sources Container Under Chat */
+.sources-under-chat {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.85rem;
+    margin-top: 0.75rem;
+    padding-top: 0;
+    border-top: none;
+}
+
+
 /* Minimalist Italic Citation Indicator */
 .inline-citation {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    margin-top: 0.85rem;
+    margin-top: 0.2rem;
     margin-bottom: 0.25rem;
+
     padding: 0;
     background: transparent !important;
     border: none !important;
