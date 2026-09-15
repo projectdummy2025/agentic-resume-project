@@ -89,6 +89,19 @@ def condense_query(query: str, history_text: str) -> str:
         return query
 
 
+def enrichQuery(userQuery: str, sessionId: str) -> str:
+    # Append document sources if user query is a meta/summary request
+    summaryKeywords = ["dibahas", "isi", "ringkasan", "rangkum", "tentang", "overview", "summary"]
+    isSummaryRequest = any(keyword in userQuery.lower() for keyword in summaryKeywords)
+    if isSummaryRequest:
+        documentSources = rag.get_document_sources(sessionId)
+        if documentSources:
+            sourceString = " ".join(documentSources)
+            return f"{userQuery} {sourceString}"
+    return userQuery
+
+
+
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
     try:
@@ -216,7 +229,8 @@ async def chat_stream(req: QueryRequest):
             else:
                 condensed = req.text
 
-            docs = await asyncio.to_thread(rag.retrieve, req.session_id, condensed)
+            searchQuery = enrichQuery(condensed, req.session_id)
+            docs = await asyncio.to_thread(rag.retrieve, req.session_id, searchQuery)
 
             context_parts = []
             for d in docs:
@@ -304,7 +318,8 @@ async def chat(req: QueryRequest):
             else:
                 condensed = req.text
 
-            docs = await asyncio.to_thread(rag.retrieve, req.session_id, condensed)
+            searchQuery = enrichQuery(condensed, req.session_id)
+            docs = await asyncio.to_thread(rag.retrieve, req.session_id, searchQuery)
             context_parts = []
             for d in docs:
                 src = d.get("source", "dokumen")
