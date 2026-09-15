@@ -122,6 +122,27 @@ def _ensure_bm25_store(session_id: str) -> dict | None:
     return store
 
 
+def has_documents(session_id: str) -> bool:
+    try:
+        collection = _collection(session_id)
+        return collection.count() > 0
+    except Exception:
+        return False
+
+
+def get_document_sources(session_id: str) -> list[str]:
+    try:
+        collection = _collection(session_id)
+        if collection.count() == 0:
+            return []
+        res = collection.get()
+        metas = res.get("metadatas", [])
+        sources = list(dict.fromkeys(m.get("source") for m in metas if m and "source" in m))
+        return sources
+    except Exception:
+        return []
+
+
 def ingest_pdf_pages(session_id: str, filename: str, pages: list[dict]) -> int:
     """
     Ingest PDF pages incrementally into ChromaDB and BM25 store.
