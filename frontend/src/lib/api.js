@@ -1,10 +1,6 @@
 const API_BASE = '/api';
 
 async function request(path, options = {}) {
-  if (path.includes('draft-')) {
-    throw new Error('Sesi ini belum disimpan.');
-  }
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
@@ -16,16 +12,13 @@ async function request(path, options = {}) {
     clearTimeout(timeout);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      if (res.status === 404) {
-        throw new Error('Sesi tidak ditemukan atau belum disimpan.');
-      }
-      throw new Error(data.detail || 'Gagal memproses permintaan');
+      throw new Error(data.detail || `HTTP Error ${res.status}: Gagal memproses permintaan`);
     }
     return data;
   } catch (err) {
     clearTimeout(timeout);
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Permintaan timeout');
+      throw new Error('Permintaan timeout (20s)');
     }
     if (options.retry && err instanceof TypeError) {
       return request(path, { ...options, retry: false });
@@ -65,7 +58,6 @@ export async function getSessionDocuments(sessionId) {
 }
 
 export async function chat(text, promptStyle, sessionId) {
-  if (sessionId && sessionId.startsWith('draft-')) throw new Error('Sesi ini belum disimpan.');
   return request('/chat', {
     method: 'POST',
     body: JSON.stringify({ text, prompt_style: promptStyle, session_id: sessionId }),
@@ -77,8 +69,6 @@ export async function analyze(text, promptStyle, sessionId) {
 }
 
 export async function chatStream(text, promptStyle, sessionId, onChunk, onDocuments, onDone, onError) {
-  if (sessionId && sessionId.startsWith('draft-')) throw new Error('Sesi ini belum disimpan.');
-
   try {
     const res = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
@@ -88,7 +78,7 @@ export async function chatStream(text, promptStyle, sessionId, onChunk, onDocume
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || 'Gagal memproses pesan');
+      throw new Error(data.detail || `HTTP Error ${res.status}: Gagal memproses pesan`);
     }
 
     const reader = res.body.getReader();
@@ -107,6 +97,10 @@ export async function chatStream(text, promptStyle, sessionId, onChunk, onDocume
         if (line.startsWith('data: ')) {
           try {
             const payload = JSON.parse(line.slice(6));
+            if (payload.error) {
+              if (onError) onError(new Error(payload.error));
+              return;
+            }
             if (payload.documents && onDocuments) {
               onDocuments(payload.documents);
             }
