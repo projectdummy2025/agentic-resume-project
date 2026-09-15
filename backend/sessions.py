@@ -1,12 +1,16 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 DB_PATH = os.getenv("SESSION_DB", "/data/sessions.db")
 
 
 def _conn():
-    conn = sqlite3.connect(DB_PATH)
+    # Ensure directory exists before sqlite3 connection
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=20.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -28,7 +32,7 @@ def create_session(session_id: str, title: str | None = None):
     with _conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO sessions (id, title, created_at) VALUES (?, ?, ?)",
-            (session_id, title or "Untitled", datetime.utcnow().isoformat()),
+            (session_id, title or "Untitled", datetime.now(timezone.utc).isoformat()),
         )
 
 
@@ -59,7 +63,7 @@ def add_message(session_id: str, role: str, content: str):
     with _conn() as conn:
         conn.execute(
             "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (session_id, role, content, datetime.utcnow().isoformat()),
+            (session_id, role, content, datetime.now(timezone.utc).isoformat()),
         )
 
 
