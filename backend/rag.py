@@ -209,10 +209,6 @@ def ingest_pdf_pages(session_id: str, filename: str, pages: list[dict]) -> int:
     return len(all_chunks)
 
 
-def ingest(session_id: str, filename: str, text: str) -> int:
-    """Backward compatibility fallback for single string text."""
-    return ingest_pdf_pages(session_id, filename, [{"page": 1, "text": text}])
-
 
 def query_dense(session_id: str, query: str, top_k: int = 10) -> list[dict]:
     collection = _collection(session_id)
