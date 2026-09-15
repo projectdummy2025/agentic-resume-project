@@ -1099,21 +1099,36 @@ pre.raw-json-block {
 .app-container.sidebar-collapsed .sidebar .session-loading {
     display: none;
 }
-/* Document Badges Bar */
+/* Document Badges Bar - Left-aligned with horizontal smooth scroll */
+.rag-toggle-bar {
+    width: 100%;
+    max-width: var(--content-max-width);
+    margin-bottom: 0.45rem;
+    pointer-events: auto;
+}
+
 .doc-badge-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.5rem;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
-    padding: 0.25rem 0.5rem;
+    padding: 0.15rem 0.25rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.doc-badge-list::-webkit-scrollbar {
+    display: none;
 }
 
 .doc-badge-item {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.25rem 0.65rem;
+    padding: 0.3rem 0.75rem;
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 9999px;
@@ -1121,6 +1136,8 @@ pre.raw-json-block {
     color: var(--text-secondary, #94a3b8);
     backdrop-filter: blur(8px);
     transition: all 0.2s ease;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .doc-badge-item:hover {
@@ -1132,3 +1149,87 @@ pre.raw-json-block {
 .doc-badge-item svg {
     color: #38bdf8;
 }
+
+
+/* Minimalist Italic Citation Indicator */
+.inline-citation {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.85rem;
+    margin-bottom: 0.25rem;
+    padding: 0;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-size: 0.78rem;
+    font-family: var(--font-sans);
+    font-style: italic;
+    color: #71717a;
+    box-shadow: none !important;
+    transition: color 0.15s ease;
+}
+
+.inline-citation:hover {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #a1a1aa;
+}
+
+.inline-citation svg {
+    color: #71717a;
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+
+.inline-citation .cite-name {
+    font-weight: 400;
+    font-style: italic;
+    color: #8e8e93;
+    max-width: 420px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.inline-citation .cite-page {
+    font-size: 0.75rem;
+    font-style: italic;
+    padding: 0;
+    background: transparent !important;
+    border-radius: 0;
+    color: #71717a;
+    font-weight: 400;
+}
+
+
+.meta-chip-rag {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.4rem;
+}
+
+.chip-pills-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    width: 100%;
+}
+
+.rag-doc-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    color: #cbd5e1;
+}
+
+.rag-doc-pill svg {
+    color: #38bdf8;
+}
+
