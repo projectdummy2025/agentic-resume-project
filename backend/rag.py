@@ -220,9 +220,14 @@ def query_dense(session_id: str, query: str, top_k: int = 10) -> list[dict]:
         return []
     n = min(top_k, collection.count())
     res = collection.query(query_texts=[query], n_results=n)
-    docs = res.get("documents", [[]])[0]
-    metas = res.get("metadatas", [[]])[0]
-    ids = res.get("ids", [[]])[0]
+    docs_list = res.get("documents") or [[]]
+    metas_list = res.get("metadatas") or [[]]
+    ids_list = res.get("ids") or [[]]
+
+    docs = docs_list[0] if docs_list else []
+    metas = metas_list[0] if metas_list else []
+    ids = ids_list[0] if ids_list else []
+
 
     output = []
     for doc_id, doc, meta in zip(ids, docs, metas):
