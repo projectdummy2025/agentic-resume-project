@@ -1,30 +1,46 @@
 def get_system_prompt(style: str, context: str = "") -> str:
     base = (
-        "Kamu adalah asisten cerdas yang serbaguna. Output WAJIB dalam format JSON valid dengan key: 'jawaban', 'topik', 'sumber' (jika relevan). "
-        "Format isi 'jawaban' menggunakan Markdown yang rapi (gunakan baris baru '\\n\\n' antar paragraf, dan '\\n- ' atau '\\n1. ' untuk poin-poin agar tidak menumpuk dalam satu paragraf)."
+        "Kamu adalah asisten cerdas yang serbaguna dan komunikatif. "
+        "Jawab pertanyaan secara langsung menggunakan format Markdown yang rapi, jelas, dan terstruktur "
+        "(gunakan paragraf terpisah, cetak tebal untuk poin penting, serta daftar poin '- ' atau '1. '). "
+        "JANGAN gunakan pembungkus JSON atau sintaks kurung kurawal."
     )
     if context:
         base += (
-            "\n\nGunakan KONTEKS berikut dari dokumen pengguna untuk menjawab. "
-            "Sebutkan rujukan sumber dan nomor halaman secara spesifik pada isi 'jawaban' maupun di key 'sumber':\n---\n"
-            f"{context}\n---"
+            "\n\nKONTEKS DOKUMEN PENGGUNA:\n---\n"
+            f"{context}\n---\n\n"
+            "PETUNJUK PENGGUNAAN KONTEKS:\n"
+            "1. Jawab pertanyaan pengguna berdasarkan KONTEKS DOKUMEN di atas.\n"
+            "2. Cantumkan rujukan sumber dan nomor halaman secara eksplisit jika relevan, contoh: [Sumber: nama_file.pdf | Halaman: N].\n"
+            "3. Jika informasi tidak terdapat dalam dokumen, jawab secara umum dengan jujur bahwa informasi tersebut tidak ada pada dokumen terlampir."
         )
     if style == "few-shot":
-        return base + "\nContoh: Input: 'Apa itu machine learning?', Output: {\"jawaban\": \"Machine Learning adalah cabang AI.\\n\\nTahapan utama:\\n1. Pengumpulan Data\\n2. Pelatihan Model\", \"topik\": \"AI/ML\", \"sumber\": \"Definisi umum\"}"
+        base += (
+            "\n\nContoh Jawaban:\n"
+            "Machine Learning adalah cabang dari kecerdasan buatan (AI) yang memungkinkan sistem belajar dari data.\n\n"
+            "**Tahapan Utama:**\n"
+            "1. Pengumpulan & Pra-pemrosesan Data\n"
+            "2. Pelatihan & Evaluasi Model\n"
+            "3. Deployment Inferensi"
+        )
     if style == "cot":
-        return base + "\nPikirkan langkah-demi-langkah sebelum menjawab, letakkan pemikiranmu di key 'reasoning' dalam JSON."
+        base += "\n\nPikirkan langkah-demi-langkah secara analitis sebelum memberikan jawaban akhir yang komprehensif."
     return base
 
 
 def build_chat_system_prompt(style: str, history_text: str = "") -> str:
     base = (
-        "Kamu adalah asisten cerdas yang serbaguna. Output WAJIB dalam format JSON valid dengan key: 'jawaban', 'topik'. "
-        "Format isi 'jawaban' menggunakan Markdown yang rapi."
+        "Kamu adalah asisten cerdas yang serbaguna dan ramah. "
+        "Jawab pertanyaan pengguna secara langsung menggunakan format Markdown yang rapi, jelas, dan terstruktur. "
+        "JANGAN gunakan pembungkus JSON atau sintaks kurung kurawal."
     )
     if history_text:
-        base += f"\n\nPercakapan sebelumnya:\n---\n{history_text}\n---"
+        base += f"\n\nRiwayat Percakapan Sebelumnya:\n---\n{history_text}\n---"
     if style == "few-shot":
-        return base + "\nContoh: Input: 'Apa itu machine learning?', Output: {\"jawaban\": \"Machine Learning adalah cabang AI.\", \"topik\": \"AI/ML\"}"
+        base += (
+            "\n\nContoh Jawaban:\n"
+            "Machine Learning adalah cabang AI yang berfokus pada pengembangan algoritma untuk belajar dari data."
+        )
     if style == "cot":
-        return base + "\nPikirkan langkah-demi-langkah sebelum menjawab, letakkan pemikiranmu di key 'reasoning' dalam JSON."
+        base += "\n\nPikirkan langkah-demi-langkah secara analitis sebelum memberikan jawaban akhir."
     return base
