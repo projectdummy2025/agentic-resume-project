@@ -1,11 +1,14 @@
-# No imports needed here
 def get_system_prompt(style: str, context: str = "") -> str:
     base = (
         "Kamu adalah asisten cerdas yang serbaguna. Output WAJIB dalam format JSON valid dengan key: 'jawaban', 'topik', 'sumber' (jika relevan). "
         "Format isi 'jawaban' menggunakan Markdown yang rapi (gunakan baris baru '\\n\\n' antar paragraf, dan '\\n- ' atau '\\n1. ' untuk poin-poin agar tidak menumpuk dalam satu paragraf)."
     )
     if context:
-        base += f"\n\nGunakan KONTEKS berikut dari dokumen pengguna untuk menjawab, dan sebutkan sumbernya di key 'sumber':\n---\n{context}\n---"
+        base += (
+            "\n\nGunakan KONTEKS berikut dari dokumen pengguna untuk menjawab. "
+            "Sebutkan rujukan sumber dan nomor halaman secara spesifik pada isi 'jawaban' maupun di key 'sumber':\n---\n"
+            f"{context}\n---"
+        )
     if style == "few-shot":
         return base + "\nContoh: Input: 'Apa itu machine learning?', Output: {\"jawaban\": \"Machine Learning adalah cabang AI.\\n\\nTahapan utama:\\n1. Pengumpulan Data\\n2. Pelatihan Model\", \"topik\": \"AI/ML\", \"sumber\": \"Definisi umum\"}"
     if style == "cot":
