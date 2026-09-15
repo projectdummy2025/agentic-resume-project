@@ -31,10 +31,8 @@ export function renderMarkdown(val) {
   // Auto-fix inline list numbering " text 1. Item" -> linebreaks
   str = str.replace(/(\s)(\d+\.\s+[A-Z])/g, '\n\n$2');
 
-  // Convert raw source brackets [Sumber: doc.pdf | Halaman: X] into sleek UI badges
-  str = str.replace(/\[Sumber:\s*([^|\]]+)\s*\|\s*Halaman:\s*(\d+)\]/gi, (match, docName, pageNum) => {
-    return `<span class="inline-citation"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span class="cite-name">${escapeHtml(docName.trim())}</span><span class="cite-page">hal. ${pageNum}</span></span>`;
-  });
+  // Strip any raw inline source brackets [Sumber: ...] from response body
+  str = str.replace(/\[Sumber:\s*[^\]]+\]/gi, '');
 
   return marked.parse(str);
 }
@@ -78,6 +76,17 @@ export function renderResult(data) {
   }
   if (data.jawaban) html += `<div class="result-block">${renderMarkdown(data.jawaban)}</div>`;
 
+  const sourcesList = data.dokumen || (data.sumber ? (Array.isArray(data.sumber) ? data.sumber : [data.sumber]) : []);
+  if (sourcesList.length > 0) {
+    const docPills = sourcesList.map((d) => `
+      <span class="inline-citation">
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span class="cite-name">${escapeHtml(String(d))}</span>
+      </span>
+    `).join('');
+    html += `<div class="sources-under-chat">${docPills}</div>`;
+  }
+
   if (data.topik) {
     html += `
       <div class="meta-chips">
@@ -90,5 +99,6 @@ export function renderResult(data) {
 
   return html;
 }
+
 
 
