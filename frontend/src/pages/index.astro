@@ -63,7 +63,7 @@ const suggestions = [
 
   <script>
     import { createSession, getMessages, chatStream, ingestPdf } from '../lib/api';
-    import { renderResult, renderMarkdown, escapeHtml } from '../lib/format';
+    import { renderResult, renderMarkdown, escapeHtml, cleanDocumentName } from '../lib/format';
 
     let currentPromptStyle = 'zero-shot';
     let isChatLocked = false;
@@ -110,8 +110,8 @@ const suggestions = [
         return;
       }
 
-      // Extract unique clean document filenames (strip page tags if present)
-      const cleanDocs = Array.from(new Set(documents.map(d => d.replace(/\s*\(hal\.\s*\d+\)$/i, '').trim()))).filter(Boolean);
+      // Extract unique clean document filenames using cleanDocumentName helper
+      const cleanDocs = Array.from(new Set(documents.map(cleanDocumentName))).filter(Boolean);
 
       if (cleanDocs.length === 0) {
         bar.style.display = 'none';
@@ -207,7 +207,7 @@ const suggestions = [
           (fullText) => {
             let resultObj: any = { jawaban: fullText || streamedText };
             if (activeDocuments && activeDocuments.length > 0) {
-              const cleanActive = Array.from(new Set(activeDocuments.map(d => d.replace(/\s*\(hal\.\s*\d+\)$/i, '').trim()))).filter(Boolean);
+              const cleanActive = Array.from(new Set(activeDocuments.map(cleanDocumentName))).filter(Boolean);
               resultObj.dokumen = cleanActive;
             }
             botContent.innerHTML = renderResult(resultObj);
@@ -248,7 +248,7 @@ const suggestions = [
 
         hideIntro();
 
-        const cleanDocs = Array.from(new Set((data.documents || []).map(d => d.replace(/\s*\(hal\.\s*\d+\)$/i, '').trim()))).filter(Boolean);
+        const cleanDocs = Array.from(new Set((data.documents || []).map(cleanDocumentName))).filter(Boolean);
 
         for (const msg of data.messages) {
           if (msg.role === 'user') {
