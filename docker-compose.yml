@@ -1,6 +1,8 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      network: host
     container_name: chatbot-backend
     working_dir: /project/backend
     ports:
@@ -10,6 +12,7 @@ services:
     environment:
       - CHROMA_DIR=/data/chroma
       - SESSION_DB=/data/sessions.db
+      - FLASHRANK_CACHE_DIR=/tmp/flashrank_models
     volumes:
       - .:/project:Z
       - ./data:/data:Z
