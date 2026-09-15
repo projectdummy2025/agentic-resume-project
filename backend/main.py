@@ -90,15 +90,13 @@ def condense_query(query: str, history_text: str) -> str:
 
 
 def enrichQuery(userQuery: str, sessionId: str) -> str:
-    # Append document sources if user query is a meta/summary request
-    summaryKeywords = ["dibahas", "isi", "ringkasan", "rangkum", "tentang", "overview", "summary"]
-    isSummaryRequest = any(keyword in userQuery.lower() for keyword in summaryKeywords)
-    if isSummaryRequest:
-        documentSources = rag.get_document_sources(sessionId)
-        if documentSources:
-            sourceString = " ".join(documentSources)
-            return f"{userQuery} {sourceString}"
+    # Always append document sources to retrieval query to anchor RAG search to document context
+    documentSources = rag.get_document_sources(sessionId)
+    if documentSources:
+        sourceString = " ".join(documentSources)
+        return f"{userQuery} {sourceString}"
     return userQuery
+
 
 
 
@@ -240,7 +238,7 @@ async def chat_stream(req: QueryRequest):
                 context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
 
             context = "\n\n---\n\n".join(context_parts)
-            system_prompt = get_system_prompt(req.prompt_style, context)
+            system_prompt = get_system_prompt(req.prompt_style, context, history_text)
             if docs:
                 doc_refs = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
         else:
@@ -328,7 +326,7 @@ async def chat(req: QueryRequest):
                 context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
 
             context = "\n\n---\n\n".join(context_parts)
-            system_instruction = get_system_prompt(req.prompt_style, context)
+            system_instruction = get_system_prompt(req.prompt_style, context, history_text)
             response = call_llm(system_instruction, req.text)
             content = response.choices[0].message.content or ""
 
