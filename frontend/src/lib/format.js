@@ -14,7 +14,20 @@ function asText(val) {
 
 export function renderMarkdown(val) {
   if (!val) return '';
-  let str = asText(val);
+  let str = asText(val).trim();
+
+  // Auto-unwrap raw JSON objects if raw JSON string was passed or recorded
+  if (str.startsWith('{') && str.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(str);
+      if (parsed.jawaban) {
+        str = String(parsed.jawaban).trim();
+      }
+    } catch {
+      // Not valid JSON, keep str as is
+    }
+  }
+
   // Auto-fix inline list numbering " text 1. Item" -> linebreaks
   str = str.replace(/(\s)(\d+\.\s+[A-Z])/g, '\n\n$2');
   return marked.parse(str);
