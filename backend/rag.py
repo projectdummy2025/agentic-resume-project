@@ -352,3 +352,12 @@ def delete_session_index(session_id: str):
     # Clear BM25 in-memory store
     if session_id in _BM25_STORES:
         del _BM25_STORES[session_id]
+
+
+def warmup():
+    """Pre-warm ChromaDB embedding function and FlashRank model into memory."""
+    try:
+        _client()
+        _get_ranker()
+    except Exception as e:
+        print(f"Pre-warmup non-critical warning: {e}")
