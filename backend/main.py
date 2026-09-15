@@ -164,7 +164,6 @@ def call_llm(system_instruction: str, user_message: str):
     client = get_openai_client()
     return client.chat.completions.create(
         model=OPENAI_COMPATIBLE_MODEL,
-        response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": user_message},
@@ -211,6 +210,8 @@ async def chat_stream(req: QueryRequest):
             system_prompt = build_chat_system_prompt(req.prompt_style, history_text)
 
         async def sse_generator():
+            full_text = ""
+            persisted = False
             try:
                 client = get_openai_client()
                 response = client.chat.completions.create(
@@ -223,7 +224,6 @@ async def chat_stream(req: QueryRequest):
                     stream=True,
                 )
 
-                full_text = ""
                 if doc_refs:
                     yield f"data: {json.dumps({'documents': doc_refs})}\n\n"
 
@@ -235,10 +235,18 @@ async def chat_stream(req: QueryRequest):
                     await asyncio.sleep(0.005)
 
                 sessions.add_message(req.session_id, "assistant", full_text)
+                persisted = True
                 yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
             except Exception as stream_err:
                 print(f"Error in SSE stream: {stream_err}")
                 yield f"data: {json.dumps({'error': str(stream_err), 'done': True})}\n\n"
+            finally:
+                # Save partial generated response if connection was interrupted before normal completion
+                if not persisted and full_text.strip():
+                    try:
+                        sessions.add_message(req.session_id, "assistant", full_text)
+                    except Exception as persist_err:
+                        print(f"Failed to persist partial assistant response: {persist_err}")
 
         return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
@@ -281,22 +289,16 @@ async def chat(req: QueryRequest):
             context = "\n\n---\n\n".join(context_parts)
             system_instruction = get_system_prompt(req.prompt_style, context)
             response = call_llm(system_instruction, req.text)
-            content = response.choices[0].message.content
-            try:
-                result = json.loads(content)
-            except Exception:
-                result = {"jawaban": content}
+            content = response.choices[0].message.content or ""
 
+            result = {"jawaban": content}
             if docs:
                 result["dokumen"] = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
         else:
             system_instruction = build_chat_system_prompt(req.prompt_style, history_text)
             response = call_llm(system_instruction, req.text)
-            content = response.choices[0].message.content
-            try:
-                result = json.loads(content)
-            except Exception:
-                result = {"jawaban": content}
+            content = response.choices[0].message.content or ""
+            result = {"jawaban": content}
 
         sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
         return result
