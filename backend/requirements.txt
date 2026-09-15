@@ -9,3 +9,4 @@ python-multipart
 rank-bm25
 flashrank
 onnxruntime
+fontTools
