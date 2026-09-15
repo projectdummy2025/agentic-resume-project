@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import uuid
+import re
 import traceback
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +43,19 @@ def get_openai_client():
     )
 
 
+def should_condense_query(query: str, history_len: int) -> bool:
+    """Only condense query if history is multi-turn AND query is short or ambiguous."""
+    if history_len < 2:
+        return False
+    query_lower = query.lower()
+    # Check for pronoun / follow-up reference words in Indonesian / English
+    ambiguous_tokens = ["itu", "ini", "tersebut", "dia", "nya", "mereka", "ia", "it", "they", "them", "this", "that"]
+    words = re.findall(r"\b\w+\b", query_lower)
+    if len(words) < 7 or any(w in ambiguous_tokens for w in words):
+        return True
+    return False
+
+
 def condense_query(query: str, history_text: str) -> str:
     if not history_text:
         return query
@@ -61,7 +75,7 @@ def condense_query(query: str, history_text: str) -> str:
                 {"role": "user", "content": f"Riwayat Percakapan:\n{history_text}\n\nPertanyaan Terbaru: {query}"},
             ],
             temperature=0.2,
-            max_tokens=100,
+            max_tokens=80,
         )
         condensed = res.choices[0].message.content.strip()
         return condensed or query
@@ -192,7 +206,11 @@ async def chat_stream(req: QueryRequest):
         doc_refs = []
 
         if has_docs:
-            condensed = condense_query(req.text, history_text)
+            if should_condense_query(req.text, len(history)):
+                condensed = await asyncio.to_thread(condense_query, req.text, history_text)
+            else:
+                condensed = req.text
+
             docs = await asyncio.to_thread(rag.retrieve, req.session_id, condensed)
 
             context_parts = []
@@ -232,7 +250,7 @@ async def chat_stream(req: QueryRequest):
                     if delta:
                         full_text += delta
                         yield f"data: {json.dumps({'chunk': delta})}\n\n"
-                    await asyncio.sleep(0.005)
+                    await asyncio.sleep(0)
 
                 sessions.add_message(req.session_id, "assistant", full_text)
                 persisted = True
@@ -241,7 +259,6 @@ async def chat_stream(req: QueryRequest):
                 print(f"Error in SSE stream: {stream_err}")
                 yield f"data: {json.dumps({'error': str(stream_err), 'done': True})}\n\n"
             finally:
-                # Save partial generated response if connection was interrupted before normal completion
                 if not persisted and full_text.strip():
                     try:
                         sessions.add_message(req.session_id, "assistant", full_text)
@@ -277,7 +294,11 @@ async def chat(req: QueryRequest):
         sessions.add_message(req.session_id, "user", req.text)
 
         if has_docs:
-            condensed = condense_query(req.text, history_text)
+            if should_condense_query(req.text, len(history)):
+                condensed = await asyncio.to_thread(condense_query, req.text, history_text)
+            else:
+                condensed = req.text
+
             docs = await asyncio.to_thread(rag.retrieve, req.session_id, condensed)
             context_parts = []
             for d in docs:
