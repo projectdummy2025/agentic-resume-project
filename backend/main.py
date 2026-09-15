@@ -48,6 +48,16 @@ def get_openai_client():
     )
 
 
+def generateSessionTitle(userText: str) -> str:
+    # Generate clean 3-5 word session title from first user prompt
+    cleanText = re.sub(r"[^\w\s]", "", userText).strip()
+    words = cleanText.split()
+    if not words:
+        return "Sesi Baru"
+    titleStr = " ".join(words[:5])
+    return titleStr[:36].strip().capitalize()
+
+
 def should_condense_query(query: str, history_len: int) -> bool:
     """Only condense query if history is multi-turn AND query is short or ambiguous."""
     if history_len < 2:
@@ -130,10 +140,11 @@ async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
         n = await asyncio.to_thread(rag.ingest_pdf_pages, session_id, file.filename, pages)
 
         session = sessions.get_session(session_id)
+        cleanTitle = os.path.splitext(file.filename)[0].replace("_", " ").strip()
         if not session:
-            sessions.create_session(session_id, file.filename)
+            sessions.create_session(session_id, cleanTitle or "Dokumen Baru")
         elif session.get("title") in ("Untitled", "Sesi Baru"):
-            sessions.rename_session(session_id, file.filename)
+            sessions.rename_session(session_id, cleanTitle or "Dokumen Baru")
 
         sources = rag.get_document_sources(session_id)
         return {"filename": file.filename, "chunks": n, "documents": sources}
@@ -168,13 +179,6 @@ async def get_messages(session_id: str):
     }
 
 
-@app.get("/session/{session_id}/documents")
-async def get_session_documents(session_id: str):
-    session = sessions.get_session(session_id)
-    if not session:
-        return {"documents": []}
-    return {"documents": rag.get_document_sources(session_id)}
-
 
 @app.post("/session/{session_id}/rename")
 async def rename_session(session_id: str, title: str):
@@ -195,32 +199,21 @@ async def delete_session(session_id: str):
     return {"ok": True}
 
 
-def call_llm(system_instruction: str, user_message: str):
-    client = get_openai_client()
-    return client.chat.completions.create(
-        model=OPENAI_COMPATIBLE_MODEL,
-        messages=[
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.7,
-    )
-
-
 @app.post("/chat/stream")
 async def chat_stream(req: QueryRequest):
     try:
-        session = sessions.get_session(req.session_id)
-        if not session:
-            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
-            sessions.create_session(req.session_id, title or "Sesi Baru")
-            session = sessions.get_session(req.session_id)
-        elif session.get("title") in ("Untitled", "Sesi Baru"):
-            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
-            sessions.rename_session(req.session_id, title)
-
         history = sessions.get_messages(req.session_id)
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
+
+        session = sessions.get_session(req.session_id)
+        isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
+        newTitle = generateSessionTitle(req.text)
+
+        if not session:
+            sessions.create_session(req.session_id, newTitle)
+            session = sessions.get_session(req.session_id)
+        elif isPlaceholderTitle and len(history) == 0:
+            sessions.rename_session(req.session_id, newTitle)
         sessions.add_message(req.session_id, "user", req.text)
 
         has_docs = rag.has_documents(req.session_id)
@@ -305,17 +298,18 @@ async def chat_stream(req: QueryRequest):
 @app.post("/chat")
 async def chat(req: QueryRequest):
     try:
-        session = sessions.get_session(req.session_id)
-        if not session:
-            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
-            sessions.create_session(req.session_id, title or "Sesi Baru")
-            session = sessions.get_session(req.session_id)
-        elif session.get("title") in ("Untitled", "Sesi Baru"):
-            title = req.text[:40].strip() + ("..." if len(req.text) > 40 else "")
-            sessions.rename_session(req.session_id, title)
-
         history = sessions.get_messages(req.session_id)
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
+
+        session = sessions.get_session(req.session_id)
+        isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
+        newTitle = generateSessionTitle(req.text)
+
+        if not session:
+            sessions.create_session(req.session_id, newTitle)
+            session = sessions.get_session(req.session_id)
+        elif isPlaceholderTitle and len(history) == 0:
+            sessions.rename_session(req.session_id, newTitle)
         has_docs = rag.has_documents(req.session_id)
 
         sessions.add_message(req.session_id, "user", req.text)
@@ -380,7 +374,3 @@ async def chat(req: QueryRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/analyze")
-async def analyze(req: QueryRequest):
-    return await chat(req)
