@@ -40,13 +40,18 @@ async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
         import pypdf
         from io import BytesIO
         reader = pypdf.PdfReader(BytesIO(await file.read()))
-        text = "\n".join((p.extract_text() or "") for p in reader.pages)
-        n = await asyncio.to_thread(rag.ingest, session_id, file.filename, text)
+        pages = []
+        for idx, page in enumerate(reader.pages):
+            text = page.extract_text() or ""
+            if text.strip():
+                pages.append({"page": idx + 1, "text": text})
+        
+        n = await asyncio.to_thread(rag.ingest_pdf_pages, session_id, file.filename, pages)
         
         session = sessions.get_session(session_id)
         if not session:
             sessions.create_session(session_id, file.filename)
-        elif session.get("title") == "Untitled":
+        elif session.get("title") in ("Untitled", "Sesi Baru"):
             sessions.rename_session(session_id, file.filename)
             
         return {"filename": file.filename, "chunks": n}
@@ -107,7 +112,9 @@ async def delete_session(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     sessions.delete_session(session_id)
+    rag.delete_session_index(session_id)
     return {"ok": True}
+
 
 @app.post("/chat")
 async def chat(req: QueryRequest):
@@ -155,9 +162,16 @@ async def analyze(req: QueryRequest):
             sessions.rename_session(req.session_id, title)
 
         history = sessions.get_messages(req.session_id)
-        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
         docs = await asyncio.to_thread(rag.retrieve, req.session_id, req.text)
-        context = "\n\n".join(f"[{d['source']}]\n{d['text']}" for d in docs)
+        
+        context_parts = []
+        for d in docs:
+            src = d.get("source", "dokumen")
+            pg = d.get("page", 1)
+            txt = d.get("text", "").strip()
+            context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
+        context = "\n\n---\n\n".join(context_parts)
+        
         system_instruction = get_system_prompt(req.prompt_style, context)
         
         sessions.add_message(req.session_id, "user", req.text)
@@ -168,7 +182,7 @@ async def analyze(req: QueryRequest):
         result = json.loads(content)
 
         if docs:
-            result["dokumen"] = sorted({d["source"] for d in docs})
+            result["dokumen"] = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
         sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
         return result
     except HTTPException:
