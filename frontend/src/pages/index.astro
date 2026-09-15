@@ -37,7 +37,7 @@ const suggestions = [
             </svg>
           </div>
           <h1 class="hero-title">Apa yang ingin Anda pelajari hari ini?</h1>
-          <p class="hero-subtitle">Mulai obrolan umum atau unggah dokumen PDF untuk dianalisis secara akurat.</p>
+          <p class="hero-subtitle">Mulai obrolan langsung atau lampirkan dokumen PDF kapan saja untuk dianalisis.</p>
 
           <div class="suggestion-grid" id="suggestionGrid">
             {suggestions.map((s) => (
@@ -62,31 +62,16 @@ const suggestions = [
   </div>
 
   <script>
-    import { createSession, getMessages, chat, analyze, ingestPdf } from '../lib/api';
-    import { renderResult, escapeHtml } from '../lib/format';
+    import { createSession, getMessages, chatStream, ingestPdf, getSessionDocuments } from '../lib/api';
+    import { renderResult, renderMarkdown, escapeHtml } from '../lib/format';
 
     let currentPromptStyle = 'zero-shot';
-    let useRag = false;
     let isChatLocked = false;
     let currentSessionId = localStorage.getItem('currentSessionId') || '';
 
     const $ = (id: string) => document.getElementById(id)!;
     const inputEl = () => $('inputText') as HTMLTextAreaElement;
     const sendBtn = () => $('sendBtn') as HTMLButtonElement;
-
-    function setRagMode(on: boolean) {
-      useRag = on;
-      const ragOn = $('ragOn');
-      const ragOff = $('ragOff');
-      if (ragOn) ragOn.classList.toggle('active', on);
-      if (ragOff) ragOff.classList.toggle('active', !on);
-
-      // Hide or show PDF upload button based on RAG mode
-      const uploadBtn = document.querySelector('.upload-btn') as HTMLElement;
-      if (uploadBtn) {
-        uploadBtn.style.display = on ? 'inline-flex' : 'none';
-      }
-    }
 
     function lockTabs() {
       if (isChatLocked) return;
@@ -101,7 +86,7 @@ const suggestions = [
 
     function scrollToBottom() {
       const main = $('mainContent');
-      main.scrollTop = main.scrollHeight;
+      if (main) main.scrollTop = main.scrollHeight;
     }
 
     function hideIntro() {
@@ -114,11 +99,43 @@ const suggestions = [
       if (empty) empty.style.display = 'flex';
     }
 
+    function updateDocBadges(documents: string[] = []) {
+      const bar = $('docBadgesBar');
+      const list = $('docBadgeList');
+      if (!bar || !list) return;
+
+      if (!documents || documents.length === 0) {
+        bar.style.display = 'none';
+        list.innerHTML = '';
+        return;
+      }
+
+      bar.style.display = 'block';
+      list.innerHTML = documents.map(doc => `
+        <span class="doc-badge-item" title="${escapeHtml(doc)}">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span>${escapeHtml(doc)}</span>
+        </span>
+      `).join('');
+    }
+
     function addUserRow(text: string) {
       const row = document.createElement('div');
       row.className = 'message-row user';
       row.innerHTML = `<div class="user-bubble">${escapeHtml(text)}</div>`;
       $('chatWrapper').appendChild(row);
+    }
+
+    function addSystemEventRow(text: string) {
+      const row = document.createElement('div');
+      row.className = 'message-row system-event';
+      row.style.cssText = 'display: flex; justify-content: center; margin: 0.75rem 0; font-size: 0.8rem; color: #94a3b8;';
+      row.innerHTML = `<div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 9999px; padding: 0.25rem 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+        <span>${escapeHtml(text)}</span>
+      </div>`;
+      $('chatWrapper').appendChild(row);
+      scrollToBottom();
     }
 
     function addBotRow(): HTMLElement {
@@ -148,7 +165,7 @@ const suggestions = [
         try {
           const targetId = currentSessionId || ('draft-' + Math.random().toString(36).substring(2, 15));
           const cleanId = targetId.replace('draft-', '');
-          
+
           await createSession(cleanId, text);
           currentSessionId = cleanId;
           localStorage.setItem('currentSessionId', currentSessionId);
@@ -161,11 +178,34 @@ const suggestions = [
         }
       }
 
+      let streamedText = '';
+      let activeDocuments: string[] = [];
+
       try {
-        const api = useRag ? analyze : chat;
-        const data = await api(text, currentPromptStyle, currentSessionId);
-        botContent.innerHTML = renderResult(data);
-        window.dispatchEvent(new CustomEvent('session:refresh', { detail: { sessionId: currentSessionId } }));
+        await chatStream(
+          text,
+          currentPromptStyle,
+          currentSessionId,
+          (chunk) => {
+            streamedText += chunk;
+            botContent.innerHTML = renderMarkdown(streamedText);
+            scrollToBottom();
+          },
+          (docs) => {
+            activeDocuments = docs;
+          },
+          (fullText) => {
+            let resultObj: any = { jawaban: fullText || streamedText };
+            if (activeDocuments && activeDocuments.length > 0) {
+              resultObj.dokumen = activeDocuments;
+            }
+            botContent.innerHTML = renderResult(resultObj);
+            window.dispatchEvent(new CustomEvent('session:refresh', { detail: { sessionId: currentSessionId } }));
+          },
+          (err) => {
+            botContent.innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml(err.message)}</span>`;
+          }
+        );
       } catch (err) {
         botContent.innerHTML = `<span style="color: #f87171;">Error: ${escapeHtml((err as Error).message)}</span>`;
       } finally {
@@ -180,6 +220,7 @@ const suggestions = [
 
       if (!sessionId || sessionId.startsWith('draft-')) {
         chatWrapper.innerHTML = '';
+        updateDocBadges([]);
         showIntro();
         return;
       }
@@ -187,12 +228,13 @@ const suggestions = [
       try {
         const data = await getMessages(sessionId);
         chatWrapper.innerHTML = '';
+        updateDocBadges(data.documents || []);
+
         if (!data.messages || data.messages.length === 0) {
           showIntro();
           return;
         }
 
-        // Render messages
         for (const msg of data.messages) {
           if (msg.role === 'user') {
             addUserRow(msg.content);
@@ -214,12 +256,10 @@ const suggestions = [
           await loadHistory(currentSessionId);
           return;
         } else {
-          // If the session is not found in backend (e.g. 404), clear it to create a new draft
           currentSessionId = '';
         }
       }
-      
-      // Initialize with a client-side draft ID, DO NOT hit backend!
+
       if (!currentSessionId) {
         currentSessionId = 'draft-' + Math.random().toString(36).substring(2, 15);
         localStorage.setItem('currentSessionId', currentSessionId);
@@ -240,8 +280,8 @@ const suggestions = [
         try {
           const targetId = currentSessionId || ('draft-' + Math.random().toString(36).substring(2, 15));
           const cleanId = targetId.replace('draft-', '');
-          
-          await createSession(cleanId, file.filename);
+
+          await createSession(cleanId, file.name);
           currentSessionId = cleanId;
           localStorage.setItem('currentSessionId', currentSessionId);
           window.dispatchEvent(new CustomEvent('session:refresh', { detail: { sessionId: currentSessionId } }));
@@ -254,8 +294,12 @@ const suggestions = [
 
       try {
         const res = await ingestPdf(file, currentSessionId);
-        if (labelText) labelText.textContent = `✓ ${res.chunks} chunk`;
-        setRagMode(true);
+        if (labelText) labelText.textContent = `✓ ${file.name}`;
+
+        hideIntro();
+        addSystemEventRow(`Dokumen "${file.name}" berhasil ditambahkan (${res.chunks} chunks).`);
+        updateDocBadges(res.documents || [file.name]);
+
         window.dispatchEvent(new CustomEvent('session:refresh'));
       } catch (err) {
         if (labelText) labelText.textContent = 'Gagal';
@@ -267,11 +311,6 @@ const suggestions = [
     }
 
     function init() {
-      const ragOn = $('ragOn');
-      const ragOff = $('ragOff');
-      if (ragOn) ragOn.addEventListener('click', () => setRagMode(true));
-      if (ragOff) ragOff.addEventListener('click', () => setRagMode(false));
-
       document.querySelectorAll('.suggestion-pill').forEach((card) => {
         card.addEventListener('click', () => {
           inputEl().value = (card as HTMLElement).dataset.suggestion!;
@@ -293,8 +332,6 @@ const suggestions = [
         await loadHistory(currentSessionId);
       });
 
-      // Default mode set to Quick Chat (false)
-      setRagMode(false);
       initSession();
     }
 
