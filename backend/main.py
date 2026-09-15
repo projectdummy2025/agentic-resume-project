@@ -21,6 +21,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 app = FastAPI()
 sessions.init_db()
 
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(asyncio.to_thread(rag.warmup))
+
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai_compat")
 OPENAI_COMPATIBLE_API_KEY = os.getenv("OPENAI_COMPATIBLE_API_KEY", "")
 OPENAI_COMPATIBLE_BASE_URL = os.getenv("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:8000/v1")
