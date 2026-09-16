@@ -1250,3 +1250,46 @@ pre.raw-json-block {
     color: #38bdf8;
 }
 
+/* Drag and Drop Overlay */
+.drop-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(9, 9, 11, 0.85);
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.drop-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.drop-overlay-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2.5rem 3.5rem;
+    border: 2px dashed rgba(56, 189, 248, 0.5);
+    border-radius: 20px;
+    background: rgba(20, 20, 23, 0.9);
+    color: #f4f4f5;
+    font-size: 1.05rem;
+    font-weight: 500;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+}
+
+.drop-overlay-content svg {
+    color: #38bdf8;
+}
+
+
