@@ -58,6 +58,25 @@ def generateSessionTitle(userText: str) -> str:
     return titleStr[:36].strip().capitalize()
 
 
+def format_academic_response(text: str) -> str:
+    """Format and sanitize text to ensure space before colons and remove dashes."""
+    if not text:
+        return text
+    # Replace em-dashes and en-dashes
+    cleaned = re.sub(r"[\u2013\u2014—–]", "", text)
+    # Remove leading bullet dashes/asterisks
+    lines = []
+    for line in cleaned.splitlines():
+        if line.lstrip().startswith("- ") or line.lstrip().startswith("* "):
+            line = re.sub(r"^(\s*)([-*])\s+", r"\1", line)
+        lines.append(line)
+    cleaned = "\n".join(lines)
+    # Ensure 1 space before colons (excluding URLs like http:// and timestamps)
+    cleaned = re.sub(r"(?<!https)(?<!http)(?<!\d)(?<!\s):", " :", cleaned)
+    return cleaned
+
+
+
 def should_condense_query(query: str, history_len: int) -> bool:
     """Only condense query if history is multi-turn AND query is short or ambiguous."""
     if history_len < 2:
@@ -272,6 +291,7 @@ async def chat_stream(req: QueryRequest):
                         yield f"data: {json.dumps({'chunk': delta})}\n\n"
                     await asyncio.sleep(0)
 
+                full_text = format_academic_response(full_text)
                 sessions.add_message(req.session_id, "assistant", full_text)
                 persisted = True
                 yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
@@ -345,6 +365,7 @@ async def chat(req: QueryRequest):
             if response.choices and response.choices[0].message:
                 content = response.choices[0].message.content or ""
 
+            content = format_academic_response(content)
             result = {"jawaban": content}
             if docs:
                 result["dokumen"] = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
@@ -363,6 +384,7 @@ async def chat(req: QueryRequest):
             content = ""
             if response.choices and response.choices[0].message:
                 content = response.choices[0].message.content or ""
+            content = format_academic_response(content)
             result = {"jawaban": content}
 
         sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
