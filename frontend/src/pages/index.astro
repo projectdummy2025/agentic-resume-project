@@ -142,16 +142,51 @@ const suggestions = [
       $('chatWrapper').appendChild(row);
     }
 
-    function addSystemEventRow(text: string) {
-      const row = document.createElement('div');
-      row.className = 'message-row system-event';
-      row.style.cssText = 'display: flex; justify-content: center; margin: 0.75rem 0; font-size: 0.8rem; color: #94a3b8;';
-      row.innerHTML = `<div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 9999px; padding: 0.25rem 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem;">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+    function showToast(text: string, duration: number = 3500) {
+      let toast = document.getElementById('toastNotification');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toastNotification';
+        toast.style.cssText = `
+          position: fixed;
+          top: 68px;
+          left: 50%;
+          transform: translateX(-50%) translateY(-8px);
+          z-index: 1000;
+          background: rgba(20, 20, 23, 0.95);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          backdrop-filter: blur(12px);
+          color: #f4f4f5;
+          font-size: 0.82rem;
+          font-weight: 500;
+          padding: 0.45rem 1rem;
+          border-radius: 9999px;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+          opacity: 0;
+          transition: opacity 0.3s ease, transform 0.3s ease;
+          pointer-events: none;
+        `;
+        document.body.appendChild(toast);
+      }
+
+      toast.innerHTML = `
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="color: #38bdf8;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         <span>${escapeHtml(text)}</span>
-      </div>`;
-      $('chatWrapper').appendChild(row);
-      scrollToBottom();
+      `;
+
+      requestAnimationFrame(() => {
+        toast!.style.opacity = '1';
+        toast!.style.transform = 'translateX(-50%) translateY(0)';
+      });
+
+      if ((toast as any)._timeout) clearTimeout((toast as any)._timeout);
+      (toast as any)._timeout = setTimeout(() => {
+        toast!.style.opacity = '0';
+        toast!.style.transform = 'translateX(-50%) translateY(-8px)';
+      }, duration);
     }
 
     function addBotRow(): HTMLElement {
@@ -326,8 +361,7 @@ const suggestions = [
         const res = await ingestPdf(file, currentSessionId);
         if (labelText) labelText.textContent = `✓ ${file.name}`;
 
-        hideIntro();
-        addSystemEventRow(`Dokumen "${file.name}" berhasil ditambahkan (${res.chunks} chunks).`);
+        showToast(`Dokumen "${file.name}" berhasil ditambahkan (${res.chunks} chunks).`);
         updateDocBadges(res.documents || [file.name]);
 
         window.dispatchEvent(new CustomEvent('session:refresh'));
