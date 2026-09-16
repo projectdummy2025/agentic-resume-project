@@ -284,7 +284,11 @@ const suggestions = [
         updateDocBadges(data.documents || []);
 
         if (!data.messages || data.messages.length === 0) {
-          showIntro();
+          if (data.documents && data.documents.length > 0) {
+            hideIntro();
+          } else {
+            showIntro();
+          }
           return;
         }
 
@@ -361,6 +365,7 @@ const suggestions = [
         const res = await ingestPdf(file, currentSessionId);
         if (labelText) labelText.textContent = `✓ ${file.name}`;
 
+        hideIntro();
         showToast(`Dokumen "${file.name}" berhasil ditambahkan (${res.chunks} chunks).`);
         updateDocBadges(res.documents || [file.name]);
 
