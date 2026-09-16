@@ -32,8 +32,15 @@
   const newBtn = document.getElementById('newSessionBtn');
   const toggleBtn = document.getElementById('sidebarToggle');
 
+  const appContainer = document.querySelector('.app-container');
+  if (localStorage.getItem('sidebarCollapsed') === 'true') {
+    appContainer?.classList.add('sidebar-collapsed');
+  }
+
   toggleBtn?.addEventListener('click', () => {
-    document.querySelector('.app-container')?.classList.toggle('sidebar-collapsed');
+    appContainer?.classList.toggle('sidebar-collapsed');
+    const isCollapsed = appContainer?.classList.contains('sidebar-collapsed');
+    localStorage.setItem('sidebarCollapsed', String(!!isCollapsed));
   });
 
   let currentActiveId = localStorage.getItem('currentSessionId') || '';
