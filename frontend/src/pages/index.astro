@@ -30,6 +30,18 @@ const suggestions = [
   </script>
 </head>
 <body>
+  <div id="dropOverlay" class="drop-overlay">
+    <div class="drop-overlay-content">
+      <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <polyline points="9 15 12 12 15 15"/>
+      </svg>
+      <span>Lepaskan file PDF di sini untuk mengunggah</span>
+    </div>
+  </div>
+
   <div class="app-container">
     <Sidebar />
 
@@ -336,9 +348,13 @@ const suggestions = [
       window.dispatchEvent(new CustomEvent('session:change', { detail: { sessionId: currentSessionId } }));
     }
 
-    async function uploadDoc(input: HTMLInputElement) {
-      const file = input.files?.[0];
+    async function uploadPdf(file: File) {
       if (!file) return;
+
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        showToast('Hanya file PDF yang dapat diunggah.');
+        return;
+      }
 
       const labelText = $('uploadLabelText');
       const prevText = labelText ? labelText.textContent : 'Lampirkan PDF';
@@ -375,8 +391,40 @@ const suggestions = [
         alert((err as Error).message);
       } finally {
         setTimeout(() => { if (labelText && prevText) labelText.textContent = prevText; }, 3000);
-        input.value = '';
       }
+    }
+
+    function initDragAndDrop() {
+      const overlay = $('dropOverlay');
+      let dragCounter = 0;
+
+      window.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        if (overlay) overlay.classList.add('active');
+      });
+
+      window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+
+      window.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0 && overlay) {
+          dragCounter = 0;
+          overlay.classList.remove('active');
+        }
+      });
+
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        if (overlay) overlay.classList.remove('active');
+
+        const file = e.dataTransfer?.files?.[0];
+        if (file) uploadPdf(file);
+      });
     }
 
     function init() {
@@ -393,7 +441,12 @@ const suggestions = [
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
       });
       sendBtn().addEventListener('click', sendMessage);
-      $('docInput').addEventListener('change', (e) => uploadDoc(e.target as HTMLInputElement));
+      $('docInput').addEventListener('change', (e) => {
+        const input = e.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (file) uploadPdf(file);
+        input.value = '';
+      });
 
       window.addEventListener('session:change', async (e: any) => {
         currentSessionId = e.detail.sessionId;
@@ -401,6 +454,7 @@ const suggestions = [
         await loadHistory(currentSessionId);
       });
 
+      initDragAndDrop();
       initSession();
     }
 
