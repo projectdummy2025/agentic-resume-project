@@ -132,6 +132,11 @@ main#mainContent {
     scrollbar-color: var(--border-color) transparent;
 }
 
+/* Hide scrollbar when intro empty state is visible */
+main#mainContent:has(.empty-state:not([style*="display: none"])) {
+    overflow: hidden;
+}
+
 .chat-wrapper {
     width: 100%;
     max-width: var(--content-max-width);
@@ -149,10 +154,10 @@ main#mainContent {
     align-items: center;
     justify-content: center;
     gap: 1.75rem;
-    min-height: calc(100vh - 240px);
+    min-height: 0;
     width: 100%;
     max-width: var(--content-max-width);
-    padding: 0;
+    padding: 0 1.5rem;
     margin: auto;
     text-align: center;
 }
