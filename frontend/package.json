@@ -9,7 +9,10 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "astro": "^4.16.0",
+    "astro": "^7.3.5",
     "marked": "^14.1.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }
