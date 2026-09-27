@@ -1,136 +1,68 @@
-# Spesifikasi Arsitektur Conversational RAG: Unified Multi-Document Accumulation
+# Spesifikasi Arsitektur & Panduan Technical Stack RAG
 
-Dokumen ini berisi spesifikasi arsitektur RAG (*Retrieval-Augmented Generation*) terpadu untuk `airesume-project`. Arsitektur ini dirancang agar percakapan terasa alami dan mengalir seperti ChatGPT, dengan kemampuan **penambahan dokumen bertahap di tengah percakapan (Incremental Multi-Doc Accumulation)** tanpa memutus alur chat.
-
----
-
-## 1. Konsep Utama: Unified Session & Auto-RAG Detection
-
-Membuang pemisahan kaku antara Mode Chat Biasa (`/chat`) dan Mode RAG (`/analyze`).
-
-```
-                              ┌──────────────────────────────────────────────┐
-                              │ Input User / Upload PDF di Pertengahan Chat  │
-                              └──────────────────────┬───────────────────────┘
-                                                     │
-                                                     ▼
-                                      ┌──────────────────────────────┐
-                                      │  Unified Endpoint: /chat     │
-                                      └──────────────┬───────────────┘
-                                                     │
-                                  Apakah Sesi Punya Dokumen Terunggah?
-                                      ┌──────────────┴──────────────┐
-                                      │                             │
-                                  [ BELUM ]                      [ SUDAH ]
-                                      │                             │
-                                      ▼                             ▼
-                            ┌───────────────────┐     ┌────────────────────────────┐
-                            │ General Chat Flow │     │ Auto Hybrid RAG Pipeline   │
-                            │ (Riwayat Chat)    │     │ (Multi-Doc + Citations)    │
-                            └───────────────────┘     └────────────────────────────┘
-```
-
-### Skenario Alur Pengguna (User Journey):
-1. **Awal Percakapan**: User membuka sesi baru dan menyapa/tanya umum (Chat biasa berjalan lancar).
-2. **Upload Dokumen Pertama**: User mengunggah `resume_v1.pdf`. Backend melakukan *ingestion* ke `session_id`. Sesi otomatis mengaktifkan mode Auto-RAG.
-3. **Percakapan Berlanjut**: User bertanya tentang `resume_v1.pdf`. Jawaban diberikan dengan rujukan sitasi halaman.
-4. **Upload Dokumen Kedua (Ekspansi Pengetahuan)**: User mengunggah `portofolio.pdf` di tengah percakapan. Dokumen kedua ditambahkan (*append*) ke memori sesi tanpa mereset riwayat chat atau menghapus `resume_v1.pdf`.
-5. **Jawaban Akumulasi**: User bertanya lintas dokumen (*"Bandingkan skill di resume dengan proyek di portofolio"*). RAG mencari ke seluruh dokumen terakumulasi dan menjawab secara utuh.
+Dokumen ini berisi dokumentasi terpadu untuk arsitektur RAG (*Retrieval-Augmented Generation*) pada `airesume-project`. Sistem ini mengimplementasikan **Unified Multi-Document Accumulation**, **Auto-RAG Detection**, **Hybrid Search (Dense + BM25)**, **FlashRank Re-ranking**, dan **SSE Real-Time Streaming**.
 
 ---
 
-## 2. Diagram Pipeline Arsitektur
+## 1. Alur Sistem & Skenario Penggunaan
+
+Sistem ini tidak memisahkan antara chat biasa dan mode analisis dokumen. Semua interaksi berjalan melalui endpoint terpadu:
 
 ```mermaid
 flowchart TD
-    %% 1. DYNAMIC INGESTION
-    subgraph INGESTION ["1. Dynamic Multi-Doc Ingestion (Append-Only)"]
-        direction TB
-        PDF1[PDF Dokumen 1] --> PARSER[Page-Aware Parser]
-        PDF2[PDF Dokumen 2...N] --> PARSER
-        PARSER --> CHUNK[Recursive Semantic Chunking]
-        CHUNK --> DENSE[(ChromaDB Session Store)]
-        CHUNK --> SPARSE[(BM25 In-Memory Index)]
-    end
-
-    INGESTION --> RETRIEVAL
-
-    %% 2. UNIFIED CHAT & STREAMING
-    subgraph RETRIEVAL ["2. Unified Chat & Real-Time SSE Streaming"]
-        direction TB
-        U_IN[User Input + Chat History] --> QC[Query Condenser / Contextual Rewriter]
-        
-        QC --> CHK{Adakah Dokumen di Sesi?}
-        CHK -- Tidak --> LLM_PLAIN[LLM Engine General Chat]
-        CHK -- Ya --> HYBRID[Hybrid Search: Dense + BM25]
-        
-        HYBRID --> RRF[Reciprocal Rank Fusion k=60]
-        RRF --> RERANK[FlashRank Cross-Encoder Reranker]
-        RERANK --> PROMPT[Prompt Assembly + Citations]
-        PROMPT --> LLM_RAG[LLM Engine Grounded]
-        
-        LLM_PLAIN --> SSE[SSE Event Stream -> UI Realtime]
-        LLM_RAG --> SSE
-    end
-
-    DENSE --> HYBRID
-    SPARSE --> HYBRID
+    INPUT[Input User / Upload PDF] --> STREAM[/chat/stream & /chat/]
+    STREAM --> CHECK{Sesi Memiliki Dokumen?}
+    
+    CHECK -- Belum --> GENERAL[General Chat Engine]
+    CHECK -- Sudah --> CONDENSE[Query Condenser / Context Rewriter]
+    
+    CONDENSE --> HYBRID[Hybrid Search: Dense ChromaDB + Sparse BM25]
+    HYBRID --> RRF[Reciprocal Rank Fusion k=60]
+    RRF --> RERANK[FlashRank Cross-Encoder Reranker]
+    RERANK --> LLM_RAG[LLM Engine Grounded + Citations]
+    
+    GENERAL --> SSE[SSE Event Stream -> UI Realtime]
+    LLM_RAG --> SSE
 ```
 
 ---
 
-## 3. Komponen Spesifikasi Teknis
+## 2. Spesifikasi Teknis Komponen
 
-### A. Incremental Multi-Doc Store
-- **ChromaDB**: Koleksi `session-{session_id}` menyimpan chunk dari semua file terunggah di sesi tersebut dengan metadata:
-  ```json
-  {
-    "source": "portofolio.pdf",
-    "page": 2,
-    "chunk_id": "portofolio.pdf-p2-c3-a1b2c3"
-  }
-  ```
-- **BM25 In-Memory Hydration**: `_ensure_bm25_store` menjamin indeks BM25 di RAM selalu sinkron dan ter-update secara *incremental*, serta otomatis me-rebuild dari ChromaDB jika backend di-restart.
+### A. Ekstraksi PDF & Incremental Chunking
+- **Parser**: `pypdf` (`PdfReader`) membaca PDF per halaman untuk mempertahankan metadata nomor halaman.
+- **Chunking**: `_recursive_chunk` memotong teks secara hierarkis (karakter ideal ~400, overlap 60) berdasarkan separator `["\n\n", "\n", ". ", " ", ""]`.
+- **Format Chunk ID**: `{filename}-p{page}-c{index}-{suffix}`.
 
-### B. Multi-turn Query Condensation
-- Untuk pertanyaan ambigu / konteks berlanjut (misal: *"Berapa nilainya?"* setelah bertanya *"Sebutkan IPK di resume"*), Query Condenser mengubah input menjadi query eksplisit sebelum dikirim ke RAG pipeline:
-  - *Raw User Input*: *"Berapa nilainya?"*
-  - *Condensed Query*: *"Berapa IPK Ahmad pada resume yang diunggah?"*
+### B. Incremental Multi-Doc Storage
+- **Dense Store (ChromaDB)**: Koleksi `session-{session_id}` menyimpan vektor chunk dengan *cosine similarity*. Mengunggah dokumen baru akan menambahkan (*append*) data tanpa menghapus dokumen sebelumnya.
+- **Sparse Store (BM25)**: `BM25Okapi` in-memory per sesi. Fungsi `_ensure_bm25_store` menjamin sinkronisasi otomatis dari ChromaDB jika terjadi backend restart.
 
-### C. Hybrid Search & Cross-Encoder Reranking
-- **Dense Vector**: Cosine similarity pada ChromaDB.
-- **Sparse Vector**: `BM25Okapi` kata kunci eksplisit (nama, tanggal, IPK, angka, nama teknologi).
-- **Rank Fusion**: $RRF\_Score(d) = \frac{1}{60 + rank_{dense}(d)} + \frac{1}{60 + rank_{sparse}(d)}$.
-- **CPU Reranker**: `flashrank` dengan model `ms-marco-TinyBERT-L-2-v2` via ONNX runtime.
+### C. Multi-Turn Query Condensation
+- Fungsi `should_condense_query` menganalisis pronomina (*"itu"*, *"ini"*, *"tersebut"*, *"dia"*, dll) atau pertanyaan singkat.
+- `condense_query` merangkum riwayat chat + user input menjadi 1 query eksplisit sebelum dikirim ke RAG retrieval.
 
-### D. SSE Streaming Response (ChatGPT-Like Flow)
-- Jawaban dikirim menggunakan **Server-Sent Events (SSE)** via endpoint `/chat/stream`.
-- *Time to First Token (TTFT)* < 300ms, memberikan pengalaman membaca yang mengalir tanpa *wait-and-load* kaku.
+### D. Hybrid Search & Re-Ranking
+- **Dense Vector**: `query_dense` mengambil top-10 kandidat dari ChromaDB.
+- **Sparse Vector**: `query_bm25` mengambil top-10 kandidat dari BM25 index.
+- **RRF Fusion**: `rrf_fusion` menggabungkan peringkat dengan skor:
+  $$RRF(d) = \frac{1}{60 + rank_{dense}(d)} + \frac{1}{60 + rank_{sparse}(d)}$$
+- **Reranker CPU**: `rerank_flashrank` menggunakan `flashrank` (`ms-marco-TinyBERT-L-2-v2`) via ONNX runtime untuk mengambil top-4 chunk paling relevan.
+
+### E. Real-Time SSE Streaming
+- Jawaban dikirim secara asynchronous menggunakan Server-Sent Events (SSE) via `/chat/stream`.
+- Mengirim event `chunk` untuk teks jawaban dan event `documents` untuk sitasi dokumen & halaman rujukan.
 
 ---
 
-## 4. Matriks Perubahan Alur Sistem
+## 3. Pemetaan Implementasi Codebase
 
-| Fitur | Spesifikasi Lama | Spesifikasi Baru (Unified Flow) |
+| Komponen | Spesifikasi / Metode | Lokasi Kode |
 | :--- | :--- | :--- |
-| **Endpoint API** | Terpisah (`/chat` vs `/analyze`) | **Tunggal (`/chat` & `/chat/stream`)** |
-| **Upload Dokumen** | Di awal sesi saja (Overwrites) | **Kapan saja di tengah sesi (Appends)** |
-| **Penyimpanan Dokumen** | Single File | **Multi-Document Accumulation** |
-| **Persepsi Kecepatan** | Response JSON Blocking (Lag) | **Real-Time Streaming SSE (Mengalir)** |
-| **Konteks Pertanyaan** | Single Turn | **Multi-Turn Query Rewriting** |
-
----
-
-## 5. Roadmap Eksekusi Pembaruan Projek
-
-1. **Phase 2A: RAG Core Engine Refactoring** (✅ Backend Complete)
-   - Integrated `pypdf` page-aware parser, ChromaDB, BM25, RRF, and FlashRank.
-   - Implemented incremental `ingest_pdf_pages` & `_ensure_bm25_store`.
-
-2. **Phase 2B: Unified Endpoint & Query Condenser**
-   - Satukan alur RAG ke endpoint `/chat` dengan deteksi otomatis jumlah dokumen.
-   - Tambahkan fungsi Query Condensation untuk multi-turn chat.
-
-3. **Phase 2C: SSE Streaming & UI Modernization**
-   - Implementasi SSE Streaming endpoint di FastAPI.
-   - Update UI Astro frontend agar mendukung lampiran multi-dokumen & streaming response text.
+| **PDF Extraction & Chunking** | `pypdf` + `_recursive_chunk` | [`backend/rag.py`](../backend/rag.py#L47-L90) & [`backend/main.py`](../backend/main.py#L137-L173) |
+| **ChromaDB & BM25 Storage** | `PersistentClient` & `BM25Okapi` | [`backend/rag.py`](../backend/rag.py#L160-L209) |
+| **Query Condenser** | Multi-turn rewriting | [`backend/main.py`](../backend/main.py#L80-L120) |
+| **Hybrid Retrieval & RRF** | Dense + BM25 + RRF ($k=60$) | [`backend/rag.py`](../backend/rag.py#L213-L292) |
+| **FlashRank Re-ranking** | `ms-marco-TinyBERT-L-2-v2` | [`backend/rag.py`](../backend/rag.py#L295-L350) |
+| **SSE Stream Endpoint** | FastAPI `StreamingResponse` | [`backend/main.py`](../backend/main.py#L221-L308) |
+| **Frontend Real-Time UI** | Astro + SSE EventSource | [`frontend/src/pages/index.astro`](../frontend/src/pages/index.astro) |
