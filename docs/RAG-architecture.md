@@ -31,6 +31,7 @@ flowchart TD
 
 ### A. Ekstraksi PDF & Incremental Chunking
 - **Parser**: `pypdf` (`PdfReader`) membaca PDF per halaman untuk mempertahankan metadata nomor halaman.
+- **Validasi Teks Digital**: Sistem menolak PDF yang berupa hasil *scan* atau gambar murni (tanpa teks digital yang dapat disalin) demi menjaga efisiensi komputasi dan menghindari OCR berat.
 - **Chunking**: `_recursive_chunk` memotong teks secara hierarkis (karakter ideal ~400, overlap 60) berdasarkan separator `["\n\n", "\n", ". ", " ", ""]`.
 - **Format Chunk ID**: `{filename}-p{page}-c{index}-{suffix}`.
 
