@@ -4,7 +4,7 @@ import asyncio
 import uuid
 import re
 import traceback
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -13,8 +13,9 @@ import pypdf.errors
 
 import rag
 import sessions
+import memory
 from prompts import get_system_prompt, build_chat_system_prompt
-from schemas import QueryRequest, SessionCreate
+from schemas import QueryRequest, SessionCreate, MemoryCreateRequest, MemoryOut
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
@@ -48,8 +49,16 @@ def get_openai_client():
     )
 
 
+def extract_user_id(request: Request) -> int:
+    user_header = request.headers.get("x-user-id", "")
+    clean_user = user_header.strip()
+    if clean_user.isdigit():
+        return int(clean_user)
+    return 1
+
+
+
 def generateSessionTitle(userText: str) -> str:
-    # Generate clean 3-5 word session title from first user prompt
     cleanText = re.sub(r"[^\w\s]", "", userText).strip()
     words = cleanText.split()
     if not words:
@@ -59,30 +68,23 @@ def generateSessionTitle(userText: str) -> str:
 
 
 def format_academic_response(text: str) -> str:
-    """Format and sanitize text to ensure space before colons and remove dashes."""
     if not text:
         return text
-    # Replace em-dashes and en-dashes
     cleaned = re.sub(r"[\u2013\u2014—–]", "", text)
-    # Remove leading bullet dashes/asterisks
     lines = []
     for line in cleaned.splitlines():
         if line.lstrip().startswith("- ") or line.lstrip().startswith("* "):
             line = re.sub(r"^(\s*)([-*])\s+", r"\1", line)
         lines.append(line)
     cleaned = "\n".join(lines)
-    # Ensure 1 space before colons (excluding URLs like http:// and timestamps)
     cleaned = re.sub(r"(?<!https)(?<!http)(?<!\d)(?<!\s):", " :", cleaned)
     return cleaned
 
 
-
 def should_condense_query(query: str, history_len: int) -> bool:
-    """Only condense query if history is multi-turn AND query is short or ambiguous."""
     if history_len < 2:
         return False
     query_lower = query.lower()
-    # Check for pronoun / follow-up reference words in Indonesian / English
     ambiguous_tokens = ["itu", "ini", "tersebut", "dia", "nya", "mereka", "ia", "it", "they", "them", "this", "that"]
     words = re.findall(r"\b\w+\b", query_lower)
     if len(words) < 7 or any(w in ambiguous_tokens for w in words):
@@ -121,7 +123,6 @@ def condense_query(query: str, history_text: str) -> str:
 
 
 def enrichQuery(userQuery: str, sessionId: str) -> str:
-    # Only append document sources if user query is a summary/meta question or short query
     summaryKeywords = ["dibahas", "isi", "ringkasan", "rangkum", "tentang", "overview", "summary", "bahan", "topik"]
     isSummaryRequest = any(keyword in userQuery.lower() for keyword in summaryKeywords) or len(userQuery.split()) < 4
     if isSummaryRequest:
@@ -132,11 +133,10 @@ def enrichQuery(userQuery: str, sessionId: str) -> str:
     return userQuery
 
 
-
-
 @app.post("/ingest")
-async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
+async def ingest(request: Request, file: UploadFile = File(...), session_id: str = Form(...)):
     try:
+        user_id = extract_user_id(request)
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Hanya file PDF yang didukung")
         import pypdf
@@ -146,22 +146,27 @@ async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
         try:
             reader = pypdf.PdfReader(BytesIO(content))
             pages = []
+            total_text_len = 0
             for idx, page in enumerate(reader.pages):
-                text = page.extract_text() or ""
-                if text.strip():
+                text = (page.extract_text() or "").strip()
+                if text:
                     pages.append({"page": idx + 1, "text": text})
+                    total_text_len += len(text)
         except (pypdf.errors.PdfReadError, pypdf.errors.FileNotDecryptedError) as pdf_err:
             raise HTTPException(status_code=400, detail=f"Gagal membaca PDF: {str(pdf_err)}")
 
-        if not pages:
-            raise HTTPException(status_code=400, detail="Dokumen PDF kosong atau tidak berisi teks yang dapat dibaca.")
+        if not pages or total_text_len < 20:
+            raise HTTPException(
+                status_code=400,
+                detail="PDF ditolak: Dokumen ini berupa hasil scan atau gambar tanpa teks digital yang dapat disalin. Sistem hanya memproses PDF berbasis teks digital.",
+            )
 
         n = await asyncio.to_thread(rag.ingest_pdf_pages, session_id, file.filename, pages)
 
         session = sessions.get_session(session_id)
         cleanTitle = os.path.splitext(file.filename)[0].replace("_", " ").strip()
         if not session:
-            sessions.create_session(session_id, cleanTitle or "Dokumen Baru")
+            sessions.create_session(session_id, cleanTitle or "Dokumen Baru", user_id)
         elif session.get("title") in ("Untitled", "Sesi Baru"):
             sessions.rename_session(session_id, cleanTitle or "Dokumen Baru")
 
@@ -174,15 +179,17 @@ async def ingest(file: UploadFile = File(...), session_id: str = Form(...)):
 
 
 @app.post("/session")
-async def create_session(req: SessionCreate):
+async def create_session(request: Request, req: SessionCreate):
+    user_id = extract_user_id(request)
     session_id = req.session_id or str(uuid.uuid4())
-    sessions.create_session(session_id, req.title)
+    sessions.create_session(session_id, req.title, user_id)
     return {"session_id": session_id}
 
 
 @app.get("/sessions")
-async def list_sessions():
-    return sessions.list_sessions()
+async def list_sessions(request: Request):
+    user_id = extract_user_id(request)
+    return sessions.list_sessions(user_id)
 
 
 @app.get("/session/{session_id}/messages")
@@ -196,7 +203,6 @@ async def get_messages(session_id: str):
         "messages": sessions.get_messages(session_id),
         "documents": docs,
     }
-
 
 
 @app.post("/session/{session_id}/rename")
@@ -218,9 +224,29 @@ async def delete_session(session_id: str):
     return {"ok": True}
 
 
+@app.get("/memories")
+async def get_memories(request: Request):
+    user_id = extract_user_id(request)
+    return memory.get_user_memories(user_id)
+
+
+@app.post("/memories")
+async def create_memory(request: Request, req: MemoryCreateRequest):
+    user_id = extract_user_id(request)
+    new_mem = memory.add_user_memory(user_id, req.category, req.fact)
+    return new_mem
+
+
+@app.delete("/memories/{memory_id}")
+async def delete_memory(memory_id: str):
+    memory.delete_user_memory(memory_id)
+    return {"ok": True}
+
+
 @app.post("/chat/stream")
-async def chat_stream(req: QueryRequest):
+async def chat_stream(request: Request, req: QueryRequest):
     try:
+        user_id = extract_user_id(request)
         history = sessions.get_messages(req.session_id)
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
 
@@ -229,12 +255,14 @@ async def chat_stream(req: QueryRequest):
         newTitle = generateSessionTitle(req.text)
 
         if not session:
-            sessions.create_session(req.session_id, newTitle)
+            sessions.create_session(req.session_id, newTitle, user_id)
             session = sessions.get_session(req.session_id)
         elif isPlaceholderTitle and len(history) == 0:
             sessions.rename_session(req.session_id, newTitle)
+
         sessions.add_message(req.session_id, "user", req.text)
 
+        user_memories = memory.get_user_memories(user_id)
         has_docs = rag.has_documents(req.session_id)
         doc_refs = []
 
@@ -255,11 +283,11 @@ async def chat_stream(req: QueryRequest):
                 context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
 
             context = "\n\n---\n\n".join(context_parts)
-            system_prompt = get_system_prompt(req.prompt_style, context)
+            system_prompt = get_system_prompt(req.prompt_style, context, user_memories)
             if docs:
                 doc_refs = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
         else:
-            system_prompt = build_chat_system_prompt(req.prompt_style)
+            system_prompt = build_chat_system_prompt(req.prompt_style, user_memories)
 
         async def sse_generator():
             full_text = ""
@@ -282,7 +310,6 @@ async def chat_stream(req: QueryRequest):
                     yield f"data: {json.dumps({'documents': doc_refs})}\n\n"
 
                 for chunk in response:
-                    # Guard against empty choices in stream chunk
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta.content or ""
@@ -295,6 +322,22 @@ async def chat_stream(req: QueryRequest):
                 sessions.add_message(req.session_id, "assistant", full_text)
                 persisted = True
                 yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
+
+                # Trigger background memory lifecycle evaluator
+                recent_turn = [
+                    {"role": "user", "content": req.text},
+                    {"role": "assistant", "content": full_text},
+                ]
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        memory.evaluate_memories_async,
+                        user_id,
+                        recent_turn,
+                        client,
+                        OPENAI_COMPATIBLE_MODEL,
+                    )
+                )
+
             except Exception as stream_err:
                 print(f"Error in SSE stream: {stream_err}")
                 yield f"data: {json.dumps({'error': str(stream_err), 'done': True})}\n\n"
@@ -316,8 +359,9 @@ async def chat_stream(req: QueryRequest):
 
 
 @app.post("/chat")
-async def chat(req: QueryRequest):
+async def chat(request: Request, req: QueryRequest):
     try:
+        user_id = extract_user_id(request)
         history = sessions.get_messages(req.session_id)
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
 
@@ -326,11 +370,13 @@ async def chat(req: QueryRequest):
         newTitle = generateSessionTitle(req.text)
 
         if not session:
-            sessions.create_session(req.session_id, newTitle)
+            sessions.create_session(req.session_id, newTitle, user_id)
             session = sessions.get_session(req.session_id)
         elif isPlaceholderTitle and len(history) == 0:
             sessions.rename_session(req.session_id, newTitle)
+
         has_docs = rag.has_documents(req.session_id)
+        user_memories = memory.get_user_memories(user_id)
 
         sessions.add_message(req.session_id, "user", req.text)
 
@@ -350,7 +396,7 @@ async def chat(req: QueryRequest):
                 context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
 
             context = "\n\n---\n\n".join(context_parts)
-            system_instruction = get_system_prompt(req.prompt_style, context)
+            system_instruction = get_system_prompt(req.prompt_style, context, user_memories)
             api_messages = [{"role": "system", "content": system_instruction}]
             for m in history[-6:]:
                 api_messages.append({"role": m["role"], "content": m["content"]})
@@ -370,7 +416,7 @@ async def chat(req: QueryRequest):
             if docs:
                 result["dokumen"] = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
         else:
-            system_instruction = build_chat_system_prompt(req.prompt_style)
+            system_instruction = build_chat_system_prompt(req.prompt_style, user_memories)
             api_messages = [{"role": "system", "content": system_instruction}]
             for m in history[-6:]:
                 api_messages.append({"role": m["role"], "content": m["content"]})
@@ -388,6 +434,22 @@ async def chat(req: QueryRequest):
             result = {"jawaban": content}
 
         sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
+
+        # Trigger background memory lifecycle evaluator
+        recent_turn = [
+            {"role": "user", "content": req.text},
+            {"role": "assistant", "content": result.get("jawaban", "")},
+        ]
+        asyncio.create_task(
+            asyncio.to_thread(
+                memory.evaluate_memories_async,
+                user_id,
+                recent_turn,
+                get_openai_client(),
+                OPENAI_COMPATIBLE_MODEL,
+            )
+        )
+
         return result
     except HTTPException:
         raise
@@ -395,4 +457,3 @@ async def chat(req: QueryRequest):
         print(f"ERROR in /chat: {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
