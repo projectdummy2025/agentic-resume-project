@@ -1,76 +1,114 @@
-import sqlite3
-import os
 from datetime import datetime, timezone
+from database import engine, SessionLocal, Base
+from models import User, SessionModel, Message
 
-DB_PATH = os.getenv("SESSION_DB", "/data/sessions.db")
-
-
-def _conn():
-    # Ensure directory exists before sqlite3 connection
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=20.0)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA busy_timeout=5000;")
-    conn.row_factory = sqlite3.Row
-    return conn
+DEFAULT_USER_ID = 1
 
 
 def init_db():
-    with _conn() as conn:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, title TEXT, created_at TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, created_at TEXT)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)"
-        )
+    Base.metadata.create_all(bind=engine)
 
 
-def create_session(session_id: str, title: str | None = None):
-    with _conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO sessions (id, title, created_at) VALUES (?, ?, ?)",
-            (session_id, title or "Untitled", datetime.now(timezone.utc).isoformat()),
+def create_session(session_id: str, title: str | None = None, user_id: int = DEFAULT_USER_ID):
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if not user:
+            user = User(id=user_id, created_at=now_iso)
+            db.add(user)
+            db.flush()
+
+        session_obj = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if session_obj:
+            session_obj.title = title or "Untitled"
+            session_obj.user_id = user_id
+        else:
+            session_obj = SessionModel(
+                id=session_id,
+                user_id=user_id,
+                title=title or "Untitled",
+                created_at=now_iso,
+            )
+            db.add(session_obj)
+        db.commit()
+
+
+def list_sessions(user_id: int = DEFAULT_USER_ID) -> list[dict]:
+    with SessionLocal() as db:
+        sessions = (
+            db.query(SessionModel)
+            .filter(SessionModel.user_id == user_id)
+            .order_by(SessionModel.created_at.desc())
+            .all()
         )
-
-
-def list_sessions() -> list[dict]:
-    with _conn() as conn:
-        rows = conn.execute("SELECT id, title, created_at FROM sessions ORDER BY created_at DESC").fetchall()
-        return [dict(r) for r in rows]
+        return [
+            {
+                "id": s.id,
+                "user_id": s.user_id,
+                "title": s.title,
+                "created_at": s.created_at,
+            }
+            for s in sessions
+        ]
 
 
 def get_session(session_id: str) -> dict | None:
-    with _conn() as conn:
-        row = conn.execute("SELECT id, title, created_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
-        return dict(row) if row else None
+    with SessionLocal() as db:
+        s = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if not s:
+            return None
+        return {
+            "id": s.id,
+            "user_id": s.user_id,
+            "title": s.title,
+            "created_at": s.created_at,
+        }
 
 
 def rename_session(session_id: str, title: str):
-    with _conn() as conn:
-        conn.execute("UPDATE sessions SET title = ? WHERE id = ?", (title, session_id))
+    with SessionLocal() as db:
+        s = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if s:
+            s.title = title
+            db.commit()
 
 
 def delete_session(session_id: str):
-    with _conn() as conn:
-        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    with SessionLocal() as db:
+        s = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if s:
+            db.delete(s)
+            db.commit()
 
 
 def add_message(session_id: str, role: str, content: str):
-    with _conn() as conn:
-        conn.execute(
-            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (session_id, role, content, datetime.now(timezone.utc).isoformat()),
+    with SessionLocal() as db:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        msg = Message(
+            session_id=session_id,
+            role=role,
+            content=content,
+            created_at=now_iso,
         )
+        db.add(msg)
+        db.commit()
 
 
 def get_messages(session_id: str) -> list[dict]:
-    with _conn() as conn:
-        rows = conn.execute(
-            "SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY created_at ASC",
-            (session_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+    with SessionLocal() as db:
+        messages = (
+            db.query(Message)
+            .filter(Message.session_id == session_id)
+            .order_by(Message.id.asc())
+            .all()
+        )
+        return [
+            {
+                "id": m.id,
+                "session_id": m.session_id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at,
+            }
+            for m in messages
+        ]
