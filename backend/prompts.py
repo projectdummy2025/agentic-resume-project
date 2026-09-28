@@ -1,4 +1,20 @@
-def get_system_prompt(style: str, context: str = "") -> str:
+def format_user_memories(user_memories: list[dict] | None) -> str:
+    if not user_memories:
+        return ""
+    memory_lines = []
+    for idx, mem in enumerate(user_memories, start=1):
+        category = mem.get("category", "profile")
+        fact = mem.get("fact", "")
+        memory_lines.append(f"{idx}. [{category}] {fact}")
+    facts_block = "\n".join(memory_lines)
+    return (
+        "\n\nINGATAN PROFIL PENGGUNA (LONG-TERM MEMORY) :\n---\n"
+        f"{facts_block}\n---\n"
+        "Gunakan ingatan profil pengguna di atas untuk memberikan jawaban yang dipersonalisasi dan relevan dengan identitas pengguna .\n"
+    )
+
+
+def get_system_prompt(style: str, context: str = "", user_memories: list[dict] | None = None) -> str:
     base = (
         "Kamu adalah asisten cerdas yang serbaguna, analitis, akademis, dan profesional. "
         "Jawab pertanyaan pengguna secara langsung, jelas, berbobot, dan komprehensif menggunakan bahasa Indonesia. "
@@ -8,6 +24,11 @@ def get_system_prompt(style: str, context: str = "") -> str:
         "3. Tulis jawaban dengan format Markdown yang bersih, terstruktur, dan sangat mudah disalin (copy-paste ready) .\n"
         "JANGAN gunakan pembungkus JSON atau sintaks kurung kurawal."
     )
+
+    memory_text = format_user_memories(user_memories)
+    if memory_text:
+        base += memory_text
+
     if context:
         base += (
             "\n\nKONTEKS DOKUMEN PENGGUNA :\n---\n"
@@ -30,7 +51,7 @@ def get_system_prompt(style: str, context: str = "") -> str:
     return base
 
 
-def build_chat_system_prompt(style: str) -> str:
+def build_chat_system_prompt(style: str, user_memories: list[dict] | None = None) -> str:
     base = (
         "Kamu adalah asisten cerdas yang serbaguna, analitis, dan profesional. "
         "Jawab pertanyaan pengguna secara langsung, berbobot, dan komprehensif menggunakan format Markdown yang rapi dan terstruktur. "
@@ -40,6 +61,11 @@ def build_chat_system_prompt(style: str) -> str:
         "3. Tulis jawaban dengan format Markdown yang bersih, terstruktur, dan sangat mudah disalin (copy-paste ready) .\n"
         "JANGAN gunakan pembungkus JSON atau sintaks kurung kurawal."
     )
+
+    memory_text = format_user_memories(user_memories)
+    if memory_text:
+        base += memory_text
+
     if style == "few-shot":
         base += (
             "\n\nContoh Jawaban :\n"
@@ -48,5 +74,3 @@ def build_chat_system_prompt(style: str) -> str:
     if style == "cot":
         base += "\n\nPikirkan langkah-demi-langkah secara analitis sebelum memberikan jawaban akhir yang berbobot ."
     return base
-
-
