@@ -23,14 +23,42 @@
       <div class="session-loading">Memuat...</div>
     </div>
   </div>
+
+  <div class="sidebar-footer">
+    <button class="memory-btn" id="openMemoryModalBtn" title="Ingatan Personal (MAG)">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="M12 16v-4"></path>
+        <path d="M12 8h.01"></path>
+      </svg>
+      <span class="memory-btn-text">Ingatan Saya</span>
+    </button>
+  </div>
 </aside>
 
+<!-- Modal Memori Personal -->
+<div class="modal-backdrop" id="memoryModalBackdrop" style="display: none;">
+  <div class="memory-modal">
+    <div class="memory-modal-header">
+      <h3>Ingatan Personal (Atomic Facts)</h3>
+      <button class="modal-close-btn" id="closeMemoryModalBtn">&times;</button>
+    </div>
+    <div class="memory-modal-body" id="memoryListContainer">
+      <div class="session-loading">Memuat ingatan...</div>
+    </div>
+  </div>
+</div>
+
 <script>
-  import { listSessions, createSession, renameSession, deleteSession } from '../lib/api';
+  import { listSessions, renameSession, deleteSession, getMemories, deleteMemory } from '../lib/api';
 
   const sessionListEl = document.getElementById('sessionList');
   const newBtn = document.getElementById('newSessionBtn');
   const toggleBtn = document.getElementById('sidebarToggle');
+  const openMemoryBtn = document.getElementById('openMemoryModalBtn');
+  const closeMemoryBtn = document.getElementById('closeMemoryModalBtn');
+  const memoryBackdrop = document.getElementById('memoryModalBackdrop');
+  const memoryListEl = document.getElementById('memoryListContainer');
 
   const appContainer = document.querySelector('.app-container');
   if (localStorage.getItem('sidebarCollapsed') === 'true') {
@@ -43,9 +71,56 @@
     localStorage.setItem('sidebarCollapsed', String(!!isCollapsed));
   });
 
+  openMemoryBtn?.addEventListener('click', async () => {
+    if (memoryBackdrop) memoryBackdrop.style.display = 'flex';
+    await loadMemories();
+  });
+
+  closeMemoryBtn?.addEventListener('click', () => {
+    if (memoryBackdrop) memoryBackdrop.style.display = 'none';
+  });
+
+  memoryBackdrop?.addEventListener('click', (e) => {
+    if (e.target === memoryBackdrop) memoryBackdrop.style.display = 'none';
+  });
+
+  async function loadMemories() {
+    if (!memoryListEl) return;
+    try {
+      const memories = await getMemories();
+      if (!memories || memories.length === 0) {
+        memoryListEl.innerHTML = `<div class="session-empty">Belum ada ingatan personal tersimpan. AI akan mengekstrak fakta penting dari obrolan Anda secara otomatis.</div>`;
+        return;
+      }
+      memoryListEl.innerHTML = memories.map((m: any) => `
+        <div class="memory-item">
+          <div class="memory-meta">
+            <span class="memory-badge">${escapeHtml(m.category)}</span>
+            <span class="memory-fact">${escapeHtml(m.fact)}</span>
+          </div>
+          <button class="action-btn btn-delete-memory" data-id="${m.id}" title="Hapus Ingatan">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      `).join('');
+
+      memoryListEl.querySelectorAll('.btn-delete-memory').forEach((btn: any) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          if (id && confirm('Hapus fakta ingatan ini?')) {
+            await deleteMemory(id);
+            await loadMemories();
+          }
+        });
+      });
+    } catch {
+      memoryListEl.innerHTML = `<div class="session-empty">Gagal memuat ingatan</div>`;
+    }
+  }
+
   let currentActiveId = localStorage.getItem('currentSessionId') || '';
 
-  async function refreshSessions(activeId) {
+  async function refreshSessions(activeId?: string) {
     if (activeId !== undefined) currentActiveId = activeId;
     try {
       const sessions = await listSessions();
@@ -55,14 +130,14 @@
     }
   }
 
-  function renderSessions(sessions) {
+  function renderSessions(sessions: any[]) {
     if (!sessionListEl) return;
     if (!sessions || sessions.length === 0) {
       sessionListEl.innerHTML = `<div class="session-empty">Belum ada chat</div>`;
       return;
     }
 
-    sessionListEl.innerHTML = sessions.map(s => `
+    sessionListEl.innerHTML = sessions.map((s: any) => `
       <div class="session-item ${s.id === currentActiveId ? 'active' : ''}" data-id="${s.id}">
         <button class="session-title-btn" data-id="${s.id}" title="${escapeAttr(s.title || 'Sesi Baru')}">
           <span class="truncate">${escapeHtml(s.title || 'Sesi Baru')}</span>
@@ -79,10 +154,11 @@
     `).join('');
   }
 
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+  function escapeHtml(str: string) {
+    return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m as keyof typeof map]));
   }
-  function escapeAttr(str) {
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  function escapeAttr(str: string) {
     return String(str).replace(/"/g, '&quot;');
   }
 
