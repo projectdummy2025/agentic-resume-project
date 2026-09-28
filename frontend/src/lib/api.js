@@ -1,13 +1,29 @@
 const API_BASE = '/api';
 
+export function getUserId() {
+  let userId = localStorage.getItem('userId');
+  if (!userId || isNaN(Number(userId))) {
+    userId = '1';
+    localStorage.setItem('userId', userId);
+  }
+  return userId;
+}
+
 async function request(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
+  const userId = getUserId();
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-user-id': userId,
+    ...(options.headers || {}),
+  };
+
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
       ...options,
+      headers,
+      signal: controller.signal,
     });
     clearTimeout(timeout);
     const data = await res.json().catch(() => ({}));
@@ -53,6 +69,21 @@ export async function getMessages(sessionId) {
   return request(`/session/${sessionId}/messages`, { method: 'GET' });
 }
 
+export async function getMemories() {
+  return request('/memories', { method: 'GET' });
+}
+
+export async function createMemory(category, fact) {
+  return request('/memories', {
+    method: 'POST',
+    body: JSON.stringify({ category, fact }),
+  });
+}
+
+export async function deleteMemory(memoryId) {
+  return request(`/memories/${memoryId}`, { method: 'DELETE' });
+}
+
 export async function chat(text, promptStyle, sessionId) {
   return request('/chat', {
     method: 'POST',
@@ -62,9 +93,13 @@ export async function chat(text, promptStyle, sessionId) {
 
 export async function chatStream(text, promptStyle, sessionId, onChunk, onDocuments, onDone, onError) {
   try {
+    const userId = getUserId();
     const res = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
       body: JSON.stringify({ text, prompt_style: promptStyle, session_id: sessionId }),
     });
 
@@ -118,7 +153,12 @@ export async function ingestPdf(file, sessionId) {
   const form = new FormData();
   form.append('file', file);
   form.append('session_id', sessionId);
-  const res = await fetch(`${API_BASE}/ingest`, { method: 'POST', body: form });
+  const userId = getUserId();
+  const res = await fetch(`${API_BASE}/ingest`, {
+    method: 'POST',
+    headers: { 'x-user-id': userId },
+    body: form,
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || 'Gagal mengunggah dokumen');
   return data;
