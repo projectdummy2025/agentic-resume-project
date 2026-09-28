@@ -25,3 +25,17 @@ class MessageOut(BaseModel):
     role: str
     content: str
     created_at: str
+
+
+class MemoryCreateRequest(BaseModel):
+    category: str = "profile"
+    fact: str
+
+
+class MemoryOut(BaseModel):
+    id: str
+    user_id: str
+    category: str
+    fact: str
+    created_at: str
+    updated_at: str
