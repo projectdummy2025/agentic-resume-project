@@ -1292,4 +1292,159 @@ pre.raw-json-block {
     color: #38bdf8;
 }
 
+/* Sidebar Footer & Personal Memory Modal Styles */
+.sidebar-footer {
+    height: 54px;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    border-top: 1px solid var(--border-color);
+    box-sizing: border-box;
+}
+
+.memory-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s ease;
+    width: 100%;
+    height: 100%;
+    justify-content: flex-start;
+    font-family: inherit;
+}
+
+.memory-btn:hover {
+    color: var(--text-primary);
+}
+
+.app-container.sidebar-collapsed .sidebar .memory-btn-text {
+    display: none;
+}
+
+.app-container.sidebar-collapsed .sidebar .sidebar-footer {
+    padding: 0;
+    justify-content: center;
+}
+
+.app-container.sidebar-collapsed .sidebar .memory-btn {
+    justify-content: center;
+}
+
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.memory-modal {
+    width: 100%;
+    max-width: 540px;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+    overflow: hidden;
+}
+
+.memory-modal-header {
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.memory-modal-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.4rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+}
+
+.modal-close-btn:hover {
+    color: var(--text-primary);
+}
+
+.memory-modal-body {
+    padding: 1rem 1.25rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.memory-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0.85rem;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    gap: 0.75rem;
+}
+
+.memory-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.memory-badge {
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    background-color: var(--border-color);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.memory-fact {
+    font-size: 0.825rem;
+    color: var(--text-primary);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.btn-delete-memory:hover {
+    color: #f87171;
+    background-color: rgba(248, 113, 113, 0.15);
+}
+
+
 
