@@ -1,5 +1,17 @@
 const API_BASE = '/api';
 
+export function getAuthToken() {
+  return localStorage.getItem('access_token') || '';
+}
+
+export function setAuthToken(token) {
+  if (token) {
+    localStorage.setItem('access_token', token);
+  } else {
+    localStorage.removeItem('access_token');
+  }
+}
+
 export function getUserId() {
   let userId = localStorage.getItem('userId');
   if (!userId || isNaN(Number(userId))) {
@@ -12,10 +24,13 @@ export function getUserId() {
 async function request(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
+  const token = getAuthToken();
   const userId = getUserId();
+
   const headers = {
     'Content-Type': 'application/json',
     'x-user-id': userId,
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
 
@@ -41,6 +56,43 @@ async function request(path, options = {}) {
     }
     throw err;
   }
+}
+
+export async function registerUser(name, email, password) {
+  return request('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password }),
+  });
+}
+
+export async function verifyOtp(email, otpCode) {
+  const data = await request('/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp_code: otpCode }),
+  });
+  if (data.access_token) {
+    setAuthToken(data.access_token);
+  }
+  return data;
+}
+
+export async function loginUser(email, password) {
+  const data = await request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  if (data.access_token) {
+    setAuthToken(data.access_token);
+  }
+  return data;
+}
+
+export async function getGoogleLoginUrl() {
+  return request('/auth/google/login', { method: 'GET' });
+}
+
+export async function getCurrentUser() {
+  return request('/auth/me', { method: 'GET' });
 }
 
 export async function createSession(sessionId = null, title = null) {
@@ -93,13 +145,17 @@ export async function chat(text, promptStyle, sessionId) {
 
 export async function chatStream(text, promptStyle, sessionId, onChunk, onDocuments, onDone, onError) {
   try {
+    const token = getAuthToken();
     const userId = getUserId();
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-user-id': userId,
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+
     const res = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': userId,
-      },
+      headers,
       body: JSON.stringify({ text, prompt_style: promptStyle, session_id: sessionId }),
     });
 
@@ -153,10 +209,15 @@ export async function ingestPdf(file, sessionId) {
   const form = new FormData();
   form.append('file', file);
   form.append('session_id', sessionId);
+  const token = getAuthToken();
   const userId = getUserId();
+  const headers = {
+    'x-user-id': userId,
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  };
   const res = await fetch(`${API_BASE}/ingest`, {
     method: 'POST',
-    headers: { 'x-user-id': userId },
+    headers,
     body: form,
   });
   const data = await res.json().catch(() => ({}));
