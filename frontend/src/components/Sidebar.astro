@@ -24,16 +24,6 @@
     </div>
   </div>
 
-  <div class="sidebar-footer">
-    <button class="memory-btn" id="openMemoryModalBtn" title="Ingatan Personal (MAG)">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <path d="M12 16v-4"></path>
-        <path d="M12 8h.01"></path>
-      </svg>
-      <span class="memory-btn-text">Ingatan Saya</span>
-    </button>
-  </div>
 </aside>
 
 <!-- Modal Memori Personal -->
@@ -49,8 +39,37 @@
   </div>
 </div>
 
+<!-- Modal Autentikasi (SMTP + Google OAuth) -->
+<div class="modal-backdrop" id="authModalBackdrop" style="display: none;">
+  <div class="memory-modal auth-dialog-card">
+    <button class="modal-close-btn auth-close-floating" id="closeAuthModalBtn" title="Tutup">&times;</button>
+    <div class="auth-dialog-header">
+      <h3 id="authModalTitle" class="auth-dialog-title">Selamat Datang</h3>
+      <p id="authModalSubtitle" class="auth-dialog-subtitle">Masuk untuk melanjutkan percakapan & fitur pintar</p>
+    </div>
+    <div class="auth-dialog-body" id="authModalBody">
+      <div id="authViewContainer">
+        <!-- Form Auth Dinamis -->
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-  import { listSessions, renameSession, deleteSession, getMemories, deleteMemory } from '../lib/api';
+  import {
+    listSessions,
+    renameSession,
+    deleteSession,
+    getMemories,
+    deleteMemory,
+    registerUser,
+    verifyOtp,
+    loginUser,
+    getGoogleLoginUrl,
+    getCurrentUser,
+    getAuthToken,
+    setAuthToken,
+  } from '../lib/api';
 
   const sessionListEl = document.getElementById('sessionList');
   const newBtn = document.getElementById('newSessionBtn');
@@ -59,6 +78,12 @@
   const closeMemoryBtn = document.getElementById('closeMemoryModalBtn');
   const memoryBackdrop = document.getElementById('memoryModalBackdrop');
   const memoryListEl = document.getElementById('memoryListContainer');
+
+  const openAuthBtn = document.getElementById('openAuthModalBtn');
+  const closeAuthBtn = document.getElementById('closeAuthModalBtn');
+  const authBackdrop = document.getElementById('memoryModalBackdrop');
+  const authViewContainer = document.getElementById('authViewContainer');
+  const userAccountLabel = document.getElementById('userAccountLabel');
 
   const appContainer = document.querySelector('.app-container');
   if (localStorage.getItem('sidebarCollapsed') === 'true') {
@@ -71,18 +96,298 @@
     localStorage.setItem('sidebarCollapsed', String(!!isCollapsed));
   });
 
-  openMemoryBtn?.addEventListener('click', async () => {
-    if (memoryBackdrop) memoryBackdrop.style.display = 'flex';
-    await loadMemories();
+  // Handle Google OAuth callback URL token
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenParam = urlParams.get('token');
+  if (tokenParam) {
+    setAuthToken(tokenParam);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  const authModalEl = document.getElementById('authModalBackdrop');
+
+  async function checkUserSession() {
+    const closeBtnEl = document.getElementById('closeAuthModalBtn');
+    const labelEl = document.getElementById('userAccountLabel');
+
+    if (getAuthToken()) {
+      try {
+        const user = await getCurrentUser();
+        if (labelEl && user.email) {
+          labelEl.textContent = user.name || user.email;
+        }
+        if (closeBtnEl) closeBtnEl.style.display = 'inline-flex';
+        window.dispatchEvent(new CustomEvent('auth:change', { detail: { isAuthenticated: true, user } }));
+        return;
+      } catch {
+        setAuthToken('');
+      }
+    }
+
+    // User is NOT logged in
+    if (labelEl) labelEl.textContent = 'Masuk / Daftar';
+    if (closeBtnEl) closeBtnEl.style.display = 'inline-flex';
+    window.dispatchEvent(new CustomEvent('auth:change', { detail: { isAuthenticated: false } }));
+  }
+
+  // Open Memory Modal from header button dynamically (requires auth)
+  document.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    const memBtn = target.closest('#openMemoryModalBtn');
+    if (memBtn) {
+      if (!getAuthToken()) {
+        if (authModalEl) authModalEl.style.display = 'flex';
+        renderAuthForm('login');
+        return;
+      }
+      if (memoryBackdrop) memoryBackdrop.style.display = 'flex';
+      await loadMemories();
+    }
   });
 
   closeMemoryBtn?.addEventListener('click', () => {
     if (memoryBackdrop) memoryBackdrop.style.display = 'none';
   });
 
-  memoryBackdrop?.addEventListener('click', (e) => {
-    if (e.target === memoryBackdrop) memoryBackdrop.style.display = 'none';
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const authBtn = target.closest('#openAuthModalBtn');
+    if (authBtn) {
+      if (authModalEl) authModalEl.style.display = 'flex';
+      renderAuthForm('login');
+    }
   });
+
+  closeAuthBtn?.addEventListener('click', () => {
+    if (authModalEl) authModalEl.style.display = 'none';
+  });
+
+  authModalEl?.addEventListener('click', (e) => {
+    if (e.target === authModalEl) {
+      authModalEl.style.display = 'none';
+    }
+  });
+
+  async function renderAuthForm(mode: 'login' | 'register' | 'otp', emailForOtp = '') {
+    if (!authViewContainer) return;
+    if (getAuthToken()) {
+      try {
+        const user = await getCurrentUser();
+        const initial = (user.name || user.email || 'U').charAt(0).toUpperCase();
+        authViewContainer.innerHTML = `
+          <div style="text-align: center; padding: 1.25rem 0.5rem;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #38bdf8, #818cf8); color: #09090b; font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.85rem auto; box-shadow: 0 8px 20px rgba(56, 189, 248, 0.3);">
+              ${initial}
+            </div>
+            <h4 style="margin: 0 0 0.25rem 0; color: #f4f4f5; font-size: 1.1rem; font-weight: 600;">${user.name || 'Pengguna'}</h4>
+            <p style="margin: 0 0 0.85rem 0; color: #a1a1aa; font-size: 0.85rem;">${user.email}</p>
+            <div style="margin-bottom: 1.5rem;">
+              <span class="memory-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.3rem 0.75rem; border-radius: 9999px;">
+                Metode: ${user.auth_provider === 'google' ? 'Google OAuth2' : 'Email OTP'}
+              </span>
+            </div>
+            <div>
+              <button id="logoutBtn" style="width: 100%; padding: 0.7rem; border-radius: 10px; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
+                Keluar (Logout)
+              </button>
+            </div>
+          </div>
+        `;
+        document.getElementById('logoutBtn')?.addEventListener('click', () => {
+          setAuthToken('');
+          checkUserSession();
+          if (authModalEl) authModalEl.style.display = 'none';
+          refreshSessions();
+        });
+        return;
+      } catch {
+        setAuthToken('');
+      }
+    }
+
+    if (mode === 'login') {
+      const modalTitle = document.getElementById('authModalTitle');
+      const modalSubtitle = document.getElementById('authModalSubtitle');
+      if (modalTitle) modalTitle.textContent = 'Selamat Datang';
+      if (modalSubtitle) modalSubtitle.textContent = 'Masuk untuk melanjutkan percakapan & fitur pintar';
+
+      authViewContainer.innerHTML = `
+        <button type="button" id="googleLoginBtn" class="google-sso-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Lanjutkan dengan Google</span>
+        </button>
+
+        <div class="auth-divider">
+          <span>atau dengan email</span>
+        </div>
+
+        <form id="authLoginForm" class="auth-form-stack">
+          <div class="auth-input-group">
+            <span class="auth-field-icon">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </span>
+            <input type="email" id="loginEmail" placeholder="nama@email.com" class="auth-input-field has-icon" required autocomplete="email" />
+          </div>
+
+          <div class="auth-input-group">
+            <span class="auth-field-icon">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <input type="password" id="loginPassword" placeholder="Kata Sandi Akun" class="auth-input-field has-icon" required autocomplete="current-password" />
+          </div>
+
+          <button type="submit" class="auth-primary-btn" id="loginSubmitBtn">
+            <span>Masuk ke Akun</span>
+          </button>
+        </form>
+
+        <div class="auth-bottom-switch">
+          <span>Belum memiliki akun?</span>
+          <button type="button" class="auth-link-btn" id="switchRegisterBtn">Daftar sekarang</button>
+        </div>
+      `;
+
+      document.getElementById('switchRegisterBtn')?.addEventListener('click', () => renderAuthForm('register'));
+      document.getElementById('authLoginForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = (document.getElementById('loginEmail') as HTMLInputElement).value;
+        const password = (document.getElementById('loginPassword') as HTMLInputElement).value;
+        try {
+          await loginUser(email, password);
+          await checkUserSession();
+          if (authModalEl) authModalEl.style.display = 'none';
+          refreshSessions();
+        } catch (err: any) {
+          alert(err.message || 'Gagal masuk');
+        }
+      });
+
+      document.getElementById('googleLoginBtn')?.addEventListener('click', async () => {
+        try {
+          const res = await getGoogleLoginUrl();
+          if (res.url) window.location.href = res.url;
+        } catch (err: any) {
+          alert('OAuth Google belum dikonfigurasi.');
+        }
+      });
+    } else if (mode === 'register') {
+      const modalTitle = document.getElementById('authModalTitle');
+      const modalSubtitle = document.getElementById('authModalSubtitle');
+      if (modalTitle) modalTitle.textContent = 'Buat Akun Baru';
+      if (modalSubtitle) modalSubtitle.textContent = 'Mulai obrolan AI & simpan riwayat serta ingatan personal Anda';
+
+      authViewContainer.innerHTML = `
+        <button type="button" id="googleLoginBtnReg" class="google-sso-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Daftar dengan Google</span>
+        </button>
+
+        <div class="auth-divider">
+          <span>atau daftar dengan email</span>
+        </div>
+
+        <form id="authRegisterForm" class="auth-form-stack">
+          <div class="auth-input-group">
+            <span class="auth-field-icon">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <input type="text" id="regName" placeholder="Nama Lengkap" class="auth-input-field has-icon" required autocomplete="name" />
+          </div>
+
+          <div class="auth-input-group">
+            <span class="auth-field-icon">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </span>
+            <input type="email" id="regEmail" placeholder="nama@email.com" class="auth-input-field has-icon" required autocomplete="email" />
+          </div>
+
+          <div class="auth-input-group">
+            <span class="auth-field-icon">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <input type="password" id="regPassword" placeholder="Kata Sandi (Min 6 Karakter)" class="auth-input-field has-icon" required minlength="6" autocomplete="new-password" />
+          </div>
+
+          <button type="submit" class="auth-primary-btn" id="regSubmitBtn">
+            <span>Daftar & Kirim Kode OTP</span>
+          </button>
+        </form>
+
+        <div class="auth-bottom-switch">
+          <span>Sudah memiliki akun?</span>
+          <button type="button" class="auth-link-btn" id="switchLoginBtn">Masuk di sini</button>
+        </div>
+      `;
+
+      document.getElementById('switchLoginBtn')?.addEventListener('click', () => renderAuthForm('login'));
+      document.getElementById('authRegisterForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = (document.getElementById('regName') as HTMLInputElement).value;
+        const email = (document.getElementById('regEmail') as HTMLInputElement).value;
+        const password = (document.getElementById('regPassword') as HTMLInputElement).value;
+        try {
+          const res = await registerUser(name, email, password);
+          alert(res.message || 'Kode OTP verifikasi dikirim ke email');
+          renderAuthForm('otp', email);
+        } catch (err: any) {
+          alert(err.message || 'Gagal mendaftar');
+        }
+      });
+
+      document.getElementById('googleLoginBtnReg')?.addEventListener('click', async () => {
+        try {
+          const res = await getGoogleLoginUrl();
+          if (res.url) window.location.href = res.url;
+        } catch (err: any) {
+          alert('OAuth Google belum dikonfigurasi.');
+        }
+      });
+    } else if (mode === 'otp') {
+      const modalTitle = document.getElementById('authModalTitle');
+      const modalSubtitle = document.getElementById('authModalSubtitle');
+      if (modalTitle) modalTitle.textContent = 'Verifikasi Kode OTP';
+      if (modalSubtitle) modalSubtitle.textContent = `Kode verifikasi telah dikirim ke ${emailForOtp}`;
+
+      authViewContainer.innerHTML = `
+        <form id="authOtpForm" class="auth-form-stack" style="text-align: center;">
+          <div class="otp-instruction-badge">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          </div>
+          <p class="otp-sub-text">Silakan periksa kotak masuk atau spam email Anda.</p>
+          <input type="text" id="otpCode" placeholder="••••••" maxlength="6" class="auth-input-field otp-input-field" required autofocus />
+          <button type="submit" class="auth-primary-btn">Verifikasi Kode & Masuk</button>
+          <div class="auth-bottom-switch" style="justify-content: center;">
+            <button type="button" class="auth-link-btn" id="backToLoginBtn">← Kembali ke Halaman Masuk</button>
+          </div>
+        </form>
+      `;
+
+      document.getElementById('backToLoginBtn')?.addEventListener('click', () => renderAuthForm('login'));
+      document.getElementById('authOtpForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const otp = (document.getElementById('otpCode') as HTMLInputElement).value;
+        try {
+          await verifyOtp(emailForOtp, otp);
+          alert('Verifikasi berhasil!');
+          await checkUserSession();
+          if (authModalEl) authModalEl.style.display = 'none';
+          refreshSessions();
+        } catch (err: any) {
+          alert(err.message || 'Gagal verifikasi OTP');
+        }
+      });
+    }
+  }
 
   async function loadMemories() {
     if (!memoryListEl) return;
@@ -163,6 +468,11 @@
   }
 
   function handleNewSession() {
+    if (!getAuthToken()) {
+      if (authModalEl) authModalEl.style.display = 'flex';
+      renderAuthForm('login');
+      return;
+    }
     currentActiveId = 'draft-' + Math.random().toString(36).substring(2, 15);
     localStorage.setItem('currentSessionId', currentActiveId);
     window.dispatchEvent(new CustomEvent('session:change', { detail: { sessionId: currentActiveId } }));
@@ -234,5 +544,6 @@
     await refreshSessions(currentActiveId);
   });
 
+  checkUserSession();
   refreshSessions();
 </script>
