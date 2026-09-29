@@ -9,7 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY *.py ./
+COPY main.py ./
+COPY app/ ./app/
 
 # Bake Chroma ONNX embedding model and FlashRank model into image
 RUN python -c "from chromadb.utils import embedding_functions; embedding_functions.DefaultEmbeddingFunction()"

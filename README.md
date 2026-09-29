@@ -4,21 +4,22 @@
 1. Salin `.env.example` menjadi `.env` di folder root proyek.
 2. Buka `.env` dan sesuaikan variabel lingkungan.
 
-## 2. Menjalankan Backend dengan Virtual Environment (venv)
-Gunakan Virtual Environment (`.venv`) untuk mengisolasi dependensi Python tanpa menginstal paket secara global.
+## 2. Menjalankan Backend dengan Virtual Environment (backend/.venv)
+Gunakan Virtual Environment (`.venv`) di dalam folder `backend/` untuk mengisolasi dependensi Python secara terstruktur.
 
-1. Buat dan aktifkan Virtual Environment dari folder root:
+1. Masuk ke folder backend, buat, dan aktifkan Virtual Environment:
    ```bash
+   cd backend
    python3 -m venv .venv
    source .venv/bin/activate
    ```
-2. Install seluruh dependensi backend (termasuk SQLAlchemy ORM):
+2. Install seluruh dependensi backend:
    ```bash
-   pip install -r backend/requirements.txt
+   pip install -r requirements.txt
    ```
 3. Jalankan server FastAPI backend:
    ```bash
-   uvicorn backend.main:app --reload --port 8000
+   uvicorn main:app --reload --port 8000
    ```
    *Backend berjalan di `http://localhost:8000`.*
 
@@ -46,4 +47,4 @@ Backend juga dapat dijalankan dalam container Docker:
    *Frontend berjalan di `http://localhost:3000`.*
 
 ## 5. Penggunaan
-Buka browser dan akses `http://localhost:3000`. Unggah PDF lewat tombol "Unggah" di header atau mulailah percakapan langsung untuk memanfaatkan fitur **Hybrid Context Fusion & Long-Term Memory (MAG)**.
+Buka browser dan akses `http://localhost:3000`. Unggah PDF berbasis teks digital lewat tombol "Unggah" atau mulailah percakapan langsung untuk memanfaatkan fitur **Hybrid Context Fusion & Long-Term Memory (MAG)**.
