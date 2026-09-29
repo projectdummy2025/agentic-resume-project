@@ -76,7 +76,7 @@ const suggestions = [
   </div>
 
   <script>
-    import { createSession, getMessages, chatStream, ingestPdf } from '../lib/api';
+    import { createSession, getMessages, chatStream, ingestPdf, getAuthToken } from '../lib/api';
     import { renderResult, renderMarkdown, escapeHtml, cleanDocumentName } from '../lib/format';
 
     let currentPromptStyle = 'zero-shot';
@@ -87,6 +87,59 @@ const suggestions = [
     const inputEl = () => $('inputText') as HTMLTextAreaElement;
     const sendBtn = () => $('sendBtn') as HTMLButtonElement;
 
+    function promptAuthModal() {
+      const authBtn = document.getElementById('openAuthModalBtn');
+      if (authBtn) {
+        authBtn.click();
+      }
+    }
+
+    function updateChatAuthState() {
+      const isAuth = !!getAuthToken();
+      const input = inputEl();
+      const send = sendBtn();
+      const docInput = $('docInput') as HTMLInputElement;
+      const uploadLabel = $('uploadBtnLabel') as HTMLElement;
+      const composerCard = document.querySelector('.composer-card') as HTMLElement;
+
+      if (!isAuth) {
+        if (input) {
+          input.disabled = true;
+          input.value = '';
+          input.placeholder = 'Silakan masuk atau daftar terlebih dahulu untuk menggunakan fitur obrolan...';
+        }
+        if (send) {
+          send.disabled = true;
+        }
+        if (docInput) {
+          docInput.disabled = true;
+        }
+        if (uploadLabel) {
+          uploadLabel.classList.add('disabled');
+        }
+        if (composerCard) {
+          composerCard.classList.add('chat-frozen');
+        }
+      } else {
+        if (input) {
+          input.disabled = false;
+          input.placeholder = 'Ketik pertanyaan atau diskusikan dokumen...';
+        }
+        if (docInput) {
+          docInput.disabled = false;
+        }
+        if (uploadLabel) {
+          uploadLabel.classList.remove('disabled');
+        }
+        if (composerCard) {
+          composerCard.classList.remove('chat-frozen');
+        }
+        if (input && send) {
+          send.disabled = !input.value.trim() || isChatLocked;
+        }
+      }
+    }
+
     function lockTabs() {
       if (isChatLocked) return;
       isChatLocked = true;
@@ -95,7 +148,7 @@ const suggestions = [
     function autoResize(el: HTMLTextAreaElement) {
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 180) + 'px';
-      sendBtn().disabled = !el.value.trim() || isChatLocked;
+      sendBtn().disabled = !el.value.trim() || isChatLocked || !getAuthToken();
     }
 
     function scrollToBottom() {
@@ -205,6 +258,10 @@ const suggestions = [
     }
 
     async function sendMessage() {
+      if (!getAuthToken()) {
+        promptAuthModal();
+        return;
+      }
       const text = inputEl().value.trim();
       if (!text || isChatLocked) return;
 
@@ -345,6 +402,10 @@ const suggestions = [
 
     async function uploadPdf(file: File) {
       if (!file) return;
+      if (!getAuthToken()) {
+        promptAuthModal();
+        return;
+      }
 
       if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
         showToast('Hanya file PDF yang dapat diunggah.');
@@ -425,10 +486,20 @@ const suggestions = [
     function init() {
       document.querySelectorAll('.suggestion-pill').forEach((card) => {
         card.addEventListener('click', () => {
+          if (!getAuthToken()) {
+            promptAuthModal();
+            return;
+          }
           inputEl().value = (card as HTMLElement).dataset.suggestion!;
           autoResize(inputEl());
           sendMessage();
         });
+      });
+
+      document.querySelector('.composer-card')?.addEventListener('click', () => {
+        if (!getAuthToken()) {
+          promptAuthModal();
+        }
       });
 
       inputEl().addEventListener('input', () => autoResize(inputEl()));
@@ -437,6 +508,10 @@ const suggestions = [
       });
       sendBtn().addEventListener('click', sendMessage);
       $('docInput').addEventListener('change', (e) => {
+        if (!getAuthToken()) {
+          promptAuthModal();
+          return;
+        }
         const input = e.target as HTMLInputElement;
         const file = input.files?.[0];
         if (file) uploadPdf(file);
@@ -449,8 +524,13 @@ const suggestions = [
         await loadHistory(currentSessionId);
       });
 
+      window.addEventListener('auth:change', () => {
+        updateChatAuthState();
+      });
+
       initDragAndDrop();
       initSession();
+      updateChatAuthState();
     }
 
     init();
