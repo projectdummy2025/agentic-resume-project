@@ -11,3 +11,10 @@ flashrank
 onnxruntime
 fontTools
 sqlalchemy
+pyjwt
+passlib[bcrypt]
+aiosmtplib
+httpx
+email-validator
+
+
