@@ -1420,15 +1420,125 @@ pre.raw-json-block {
 
 .auth-dialog-card {
     position: relative;
-    padding: 2.2rem 2.2rem 1.8rem 2.2rem;
+    padding: 2.4rem 2.2rem 2rem 2.2rem;
     overflow-y: auto;
+}
+
+/* ==========================================================================
+   HIRAEL LOGIN 03 STYLING (FLOATING PATHS, AMBIENT GLOW, BRAND MARK)
+   ========================================================================== */
+.hirael-login-card {
+    position: relative;
+    background: #0d0f15 !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 28px !important;
+    box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+    overflow: hidden !important;
+}
+
+/* Floating Paths SVG Background */
+.hirael-floating-paths {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 28px;
+    z-index: 1;
+}
+
+.hirael-paths-svg {
+    width: 100%;
+    height: 100%;
+    color: #38bdf8;
+    opacity: 0.5;
+}
+
+.hirael-path {
+    stroke-dasharray: 600;
+    stroke-dashoffset: 600;
+    animation: hiraelFlow 14s linear infinite alternate;
+}
+
+.hp-1 { animation-duration: 16s; animation-delay: 0s; stroke-opacity: 0.18; }
+.hp-2 { animation-duration: 18s; animation-delay: -3s; stroke-opacity: 0.22; }
+.hp-3 { animation-duration: 20s; animation-delay: -6s; stroke-opacity: 0.26; }
+.hp-4 { animation-duration: 22s; animation-delay: -9s; stroke-opacity: 0.18; }
+.hp-5 { animation-duration: 24s; animation-delay: -12s; stroke-opacity: 0.14; }
+.hp-6 { animation-duration: 26s; animation-delay: -15s; stroke-opacity: 0.10; }
+
+@keyframes hiraelFlow {
+    0% {
+        stroke-dashoffset: 600;
+    }
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+/* Ambient Radial Glow */
+.hirael-ambient-glow {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    filter: blur(55px);
+    z-index: 1;
+}
+
+.glow-top {
+    top: -60px;
+    right: -60px;
+    width: 220px;
+    height: 220px;
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.25) 0%, transparent 70%);
+}
+
+.glow-bottom {
+    bottom: -60px;
+    left: -60px;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.18) 0%, transparent 70%);
+}
+
+/* Brand Mark */
+.hirael-brand-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.85rem;
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.35rem 0.85rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hirael-brand-svg {
+    width: 18px;
+    height: 18px;
+    color: #f4f4f5;
+}
+
+.hirael-brand-text {
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #f4f4f5;
+}
+
+/* Layering header & body above floating background */
+.auth-dialog-header,
+.auth-dialog-body,
+.auth-close-floating {
+    position: relative;
+    z-index: 10;
 }
 
 .auth-close-floating {
     position: absolute;
     top: 1.25rem;
     right: 1.25rem;
-    z-index: 10;
+    z-index: 20;
 }
 
 .auth-dialog-header {
@@ -1440,17 +1550,18 @@ pre.raw-json-block {
 }
 
 .auth-dialog-title {
-    font-size: 1.4rem;
+    font-size: 1.6rem;
     font-weight: 700;
     color: #ffffff;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
     margin: 0 0 0.35rem 0;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
 }
 
 .auth-dialog-subtitle {
     font-size: 0.85rem;
     color: #a1a1aa;
-    line-height: 1.4;
+    line-height: 1.45;
     margin: 0;
 }
 
@@ -1530,6 +1641,25 @@ pre.raw-json-block {
 .auth-link-btn:hover {
     color: #7dd3fc;
     text-decoration: underline;
+}
+
+.auth-terms-note {
+    font-size: 0.75rem;
+    color: #71717a;
+    text-align: center;
+    margin-top: 1.25rem;
+    line-height: 1.5;
+}
+
+.auth-terms-note a {
+    color: #a1a1aa;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 0.15s ease;
+}
+
+.auth-terms-note a:hover {
+    color: #ffffff;
 }
 
 .otp-instruction-badge {
