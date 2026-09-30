@@ -4,7 +4,7 @@ from app.models.db_models import User
 from app.models.schemas import SessionCreate
 from app.services import session_service as sessions
 from app.services import rag_service as rag
-from app.services.security_service import get_current_user
+from app.services.security_service import get_current_user, get_optional_user
 
 router = APIRouter()
 
@@ -17,12 +17,16 @@ async def create_session(req: SessionCreate, current_user: User = Depends(get_cu
 
 
 @router.get("/sessions")
-async def list_sessions(current_user: User = Depends(get_current_user)):
+async def list_sessions(current_user: User | None = Depends(get_optional_user)):
+    if not current_user:
+        return []
     return sessions.list_sessions(current_user.id)
 
 
 @router.get("/session/{session_id}/messages")
-async def get_messages(session_id: str, current_user: User = Depends(get_current_user)):
+async def get_messages(session_id: str, current_user: User | None = Depends(get_optional_user)):
+    if not current_user:
+        return {"session": None, "messages": [], "documents": []}
     session = sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
