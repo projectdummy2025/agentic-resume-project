@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     @property
     def effective_smtp_from_email(self) -> str:
-        return self.SMTP_FROM_EMAIL or self.SMTP_USER or "noreply@airesume.local"
+        return self.SMTP_FROM_EMAIL or self.SMTP_USER or "noreply@luwesin.local"
 
 
 settings = Settings()

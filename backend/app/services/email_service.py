@@ -15,13 +15,13 @@ async def send_otp_email(to_email: str, otp_code: str):
     message = EmailMessage()
     message["From"] = SMTP_FROM_EMAIL
     message["To"] = to_email
-    message["Subject"] = f"Kode Verifikasi OTP Anda: {otp_code}"
+    message["Subject"] = f"[Luwesin] Kode Verifikasi OTP Anda: {otp_code}"
 
     html_content = f"""
     <html>
       <body style="font-family: Arial, sans-serif; background-color: #09090b; color: #f4f4f5; padding: 20px;">
         <div style="max-width: 480px; margin: 0 auto; background-color: #18181b; padding: 24px; border-radius: 12px; border: 1px solid #27272a;">
-          <h2 style="color: #38bdf8; margin-top: 0;">Verifikasi Akun AI Resume</h2>
+          <h2 style="color: #38bdf8; margin-top: 0;">Verifikasi Akun Luwesin</h2>
           <p>Gunakan kode OTP 6-digit di bawah ini untuk memverifikasi akun Anda :</p>
           <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #ffffff; text-align: center; margin: 24px 0; background-color: #27272a; padding: 12px; border-radius: 8px;">
             {otp_code}
