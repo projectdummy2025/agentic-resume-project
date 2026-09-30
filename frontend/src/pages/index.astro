@@ -17,7 +17,8 @@ const suggestions = [
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Universal AI Assistant</title>
+  <title>Luwesin - AI Assistant</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -383,9 +384,20 @@ const suggestions = [
     }
 
     async function initSession() {
+      // Jika pengguna tidak login, jangan muat riwayat sesi lama
+      if (!getAuthToken()) {
+        currentSessionId = 'draft-' + Math.random().toString(36).substring(2, 15);
+        localStorage.removeItem('currentSessionId');
+        if (chatWrapper) chatWrapper.innerHTML = '';
+        showIntro();
+        updateDocBadges([]);
+        window.dispatchEvent(new CustomEvent('session:change', { detail: { sessionId: currentSessionId } }));
+        return;
+      }
+
       if (currentSessionId && !currentSessionId.startsWith('draft-')) {
         const res = await getMessages(currentSessionId).catch(() => null);
-        if (res) {
+        if (res && res.messages && res.messages.length > 0) {
           await loadHistory(currentSessionId);
           return;
         } else {
@@ -526,6 +538,20 @@ const suggestions = [
 
       window.addEventListener('auth:change', () => {
         updateChatAuthState();
+      });
+
+      window.addEventListener('auth:logout', () => {
+        currentSessionId = 'draft-' + Math.random().toString(36).substring(2, 15);
+        localStorage.removeItem('currentSessionId');
+        if (chatWrapper) chatWrapper.innerHTML = '';
+        showIntro();
+        updateDocBadges([]);
+        updateChatAuthState();
+      });
+
+      window.addEventListener('auth:login', async () => {
+        updateChatAuthState();
+        await initSession();
       });
 
       initDragAndDrop();
