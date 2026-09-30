@@ -18,31 +18,33 @@ from app.services.chat_service import (
     enrichQuery,
 )
 from app.core.prompts import get_system_prompt, build_chat_system_prompt
-from app.services.security_service import get_current_user
+from app.services.security_service import get_optional_user
 
 router = APIRouter()
 
 
 @router.post("/chat/stream")
-async def chat_stream(req: QueryRequest, current_user: User = Depends(get_current_user)):
+async def chat_stream(req: QueryRequest, current_user: User | None = Depends(get_optional_user)):
     try:
-        user_id = current_user.id
-        history = sessions.get_messages(req.session_id)
+        user_id = current_user.id if current_user else None
+        history = sessions.get_messages(req.session_id) if current_user else []
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
 
-        session = sessions.get_session(req.session_id)
-        isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
-        newTitle = generateSessionTitle(req.text)
-
-        if not session:
-            sessions.create_session(req.session_id, newTitle, user_id)
+        # Hanya simpan sesi dan pesan jika pengguna terautentikasi (login)
+        if current_user and user_id:
             session = sessions.get_session(req.session_id)
-        elif isPlaceholderTitle and len(history) == 0:
-            sessions.rename_session(req.session_id, newTitle)
+            isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
+            newTitle = generateSessionTitle(req.text)
 
-        sessions.add_message(req.session_id, "user", req.text)
+            if not session:
+                sessions.create_session(req.session_id, newTitle, user_id)
+                session = sessions.get_session(req.session_id)
+            elif isPlaceholderTitle and len(history) == 0:
+                sessions.rename_session(req.session_id, newTitle)
 
-        user_memories = memory.get_user_memories(user_id)
+            sessions.add_message(req.session_id, "user", req.text)
+
+        user_memories = memory.get_user_memories(user_id) if user_id else []
         has_docs = rag.has_documents(req.session_id)
         doc_refs = []
 
@@ -99,30 +101,32 @@ async def chat_stream(req: QueryRequest, current_user: User = Depends(get_curren
                     await asyncio.sleep(0)
 
                 full_text = format_academic_response(full_text)
-                sessions.add_message(req.session_id, "assistant", full_text)
-                persisted = True
+                if current_user and user_id:
+                    sessions.add_message(req.session_id, "assistant", full_text)
+                    persisted = True
                 yield f"data: {json.dumps({'done': True, 'full_text': full_text})}\n\n"
 
-                # Trigger background memory lifecycle evaluator
-                recent_turn = [
-                    {"role": "user", "content": req.text},
-                    {"role": "assistant", "content": full_text},
-                ]
-                asyncio.create_task(
-                    asyncio.to_thread(
-                        memory.evaluate_memories_async,
-                        user_id,
-                        recent_turn,
-                        client,
-                        OPENAI_COMPATIBLE_MODEL,
+                # Trigger background memory lifecycle evaluator hanya untuk pengguna login
+                if current_user and user_id:
+                    recent_turn = [
+                        {"role": "user", "content": req.text},
+                        {"role": "assistant", "content": full_text},
+                    ]
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            memory.evaluate_memories_async,
+                            user_id,
+                            recent_turn,
+                            client,
+                            OPENAI_COMPATIBLE_MODEL,
+                        )
                     )
-                )
 
             except Exception as stream_err:
                 print(f"Error in SSE stream: {stream_err}")
                 yield f"data: {json.dumps({'error': str(stream_err), 'done': True})}\n\n"
             finally:
-                if not persisted and full_text.strip():
+                if current_user and user_id and not persisted and full_text.strip():
                     try:
                         sessions.add_message(req.session_id, "assistant", full_text)
                     except Exception as persist_err:
@@ -139,26 +143,27 @@ async def chat_stream(req: QueryRequest, current_user: User = Depends(get_curren
 
 
 @router.post("/chat")
-async def chat(req: QueryRequest, current_user: User = Depends(get_current_user)):
+async def chat(req: QueryRequest, current_user: User | None = Depends(get_optional_user)):
     try:
-        user_id = current_user.id
-        history = sessions.get_messages(req.session_id)
+        user_id = current_user.id if current_user else None
+        history = sessions.get_messages(req.session_id) if current_user else []
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
 
-        session = sessions.get_session(req.session_id)
-        isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
-        newTitle = generateSessionTitle(req.text)
-
-        if not session:
-            sessions.create_session(req.session_id, newTitle, user_id)
+        if current_user and user_id:
             session = sessions.get_session(req.session_id)
-        elif isPlaceholderTitle and len(history) == 0:
-            sessions.rename_session(req.session_id, newTitle)
+            isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
+            newTitle = generateSessionTitle(req.text)
+
+            if not session:
+                sessions.create_session(req.session_id, newTitle, user_id)
+                session = sessions.get_session(req.session_id)
+            elif isPlaceholderTitle and len(history) == 0:
+                sessions.rename_session(req.session_id, newTitle)
+
+            sessions.add_message(req.session_id, "user", req.text)
 
         has_docs = rag.has_documents(req.session_id)
-        user_memories = memory.get_user_memories(user_id)
-
-        sessions.add_message(req.session_id, "user", req.text)
+        user_memories = memory.get_user_memories(user_id) if user_id else []
 
         if has_docs:
             if should_condense_query(req.text, len(history)):
@@ -213,22 +218,23 @@ async def chat(req: QueryRequest, current_user: User = Depends(get_current_user)
             content = format_academic_response(content)
             result = {"jawaban": content}
 
-        sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
+        if current_user and user_id:
+            sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
 
-        # Trigger background memory lifecycle evaluator
-        recent_turn = [
-            {"role": "user", "content": req.text},
-            {"role": "assistant", "content": result.get("jawaban", "")},
-        ]
-        asyncio.create_task(
-            asyncio.to_thread(
-                memory.evaluate_memories_async,
-                user_id,
-                recent_turn,
-                get_openai_client(),
-                OPENAI_COMPATIBLE_MODEL,
+            # Trigger background memory lifecycle evaluator
+            recent_turn = [
+                {"role": "user", "content": req.text},
+                {"role": "assistant", "content": result.get("jawaban", "")},
+            ]
+            asyncio.create_task(
+                asyncio.to_thread(
+                    memory.evaluate_memories_async,
+                    user_id,
+                    recent_turn,
+                    get_openai_client(),
+                    OPENAI_COMPATIBLE_MODEL,
+                )
             )
-        )
 
         return result
     except HTTPException:
