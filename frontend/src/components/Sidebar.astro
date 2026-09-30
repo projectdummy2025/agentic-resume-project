@@ -39,11 +39,35 @@
   </div>
 </div>
 
-<!-- Modal Autentikasi (SMTP + Google OAuth) -->
+<!-- Modal Autentikasi Bergaya Hirael Login 03 -->
 <div class="modal-backdrop" id="authModalBackdrop" style="display: none;">
-  <div class="memory-modal auth-dialog-card">
+  <div class="memory-modal auth-dialog-card hirael-login-card">
+    <!-- Floating Paths SVG Animation Background -->
+    <div class="hirael-floating-paths" aria-hidden="true">
+      <svg class="hirael-paths-svg" fill="none" viewBox="0 0 600 450">
+        <path class="hirael-path hp-1" d="M-120 -60 C-60 140, 110 210, 310 180 C510 150, 640 340, 720 460" stroke="currentColor" stroke-width="1.2" />
+        <path class="hirael-path hp-2" d="M-90 -40 C-30 160, 140 230, 340 200 C540 170, 670 360, 750 480" stroke="currentColor" stroke-width="1.4" />
+        <path class="hirael-path hp-3" d="M-60 -20 C0 180, 170 250, 370 220 C570 190, 700 380, 780 500" stroke="currentColor" stroke-width="1.6" />
+        <path class="hirael-path hp-4" d="M-30 0 C30 200, 200 270, 400 240 C600 210, 730 400, 810 520" stroke="currentColor" stroke-width="1.8" />
+        <path class="hirael-path hp-5" d="M0 20 C60 220, 230 290, 430 260 C630 230, 760 420, 840 540" stroke="currentColor" stroke-width="2.0" />
+        <path class="hirael-path hp-6" d="M30 40 C90 240, 260 310, 460 280 C660 250, 790 440, 870 560" stroke="currentColor" stroke-width="2.2" />
+      </svg>
+    </div>
+
+    <!-- Ambient Radial Glow -->
+    <div class="hirael-ambient-glow glow-top" aria-hidden="true"></div>
+    <div class="hirael-ambient-glow glow-bottom" aria-hidden="true"></div>
+
     <button class="modal-close-btn auth-close-floating" id="closeAuthModalBtn" title="Tutup">&times;</button>
     <div class="auth-dialog-header">
+      <div class="hirael-brand-mark">
+        <svg viewBox="0 0 32 32" fill="none" class="hirael-brand-svg" width="20" height="20">
+          <rect width="32" height="32" rx="8" fill="#1c1917"/>
+          <path d="M10 7C10 14.5 9.5 19.5 12 22.5C14 25 18 25.5 21 23C23.5 21 24 17.5 21.5 15C19 12.5 15.5 14 13.5 17.5C11.5 21 10 24 7.5 25.5" stroke="#fafaf9" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="21.5" cy="8.5" r="1.75" fill="#f59e0b"/>
+        </svg>
+        <span class="hirael-brand-text">Luwesin</span>
+      </div>
       <h3 id="authModalTitle" class="auth-dialog-title">Selamat Datang</h3>
       <p id="authModalSubtitle" class="auth-dialog-subtitle">Masuk untuk melanjutkan percakapan & fitur pintar</p>
     </div>
@@ -195,9 +219,11 @@
         `;
         document.getElementById('logoutBtn')?.addEventListener('click', () => {
           setAuthToken('');
+          localStorage.removeItem('currentSessionId');
           checkUserSession();
           if (authModalEl) authModalEl.style.display = 'none';
           refreshSessions();
+          window.dispatchEvent(new CustomEvent('auth:logout'));
         });
         return;
       } catch {
@@ -250,6 +276,10 @@
           <span>Belum memiliki akun?</span>
           <button type="button" class="auth-link-btn" id="switchRegisterBtn">Daftar sekarang</button>
         </div>
+
+        <p class="auth-terms-note">
+          Dengan melanjutkan, Anda menyetujui <a href="#">Ketentuan Layanan</a> & <a href="#">Kebijakan Privasi</a>.
+        </p>
       `;
 
       document.getElementById('switchRegisterBtn')?.addEventListener('click', () => renderAuthForm('register'));
@@ -262,6 +292,7 @@
           await checkUserSession();
           if (authModalEl) authModalEl.style.display = 'none';
           refreshSessions();
+          window.dispatchEvent(new CustomEvent('auth:login'));
         } catch (err: any) {
           alert(err.message || 'Gagal masuk');
         }
@@ -382,6 +413,7 @@
           await checkUserSession();
           if (authModalEl) authModalEl.style.display = 'none';
           refreshSessions();
+          window.dispatchEvent(new CustomEvent('auth:login'));
         } catch (err: any) {
           alert(err.message || 'Gagal verifikasi OTP');
         }
@@ -391,6 +423,10 @@
 
   async function loadMemories() {
     if (!memoryListEl) return;
+    if (!getAuthToken()) {
+      memoryListEl.innerHTML = `<div class="session-empty">Masuk untuk melihat ingatan personal</div>`;
+      return;
+    }
     try {
       const memories = await getMemories();
       if (!memories || memories.length === 0) {
@@ -427,6 +463,10 @@
 
   async function refreshSessions(activeId?: string) {
     if (activeId !== undefined) currentActiveId = activeId;
+    if (!getAuthToken()) {
+      if (sessionListEl) sessionListEl.innerHTML = `<div class="session-empty">Masuk untuk melihat riwayat chat</div>`;
+      return;
+    }
     try {
       const sessions = await listSessions();
       renderSessions(sessions);
