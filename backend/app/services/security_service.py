@@ -49,38 +49,30 @@ def decode_access_token(token: str) -> dict | None:
         return None
 
 
+def get_optional_user(auth: HTTPAuthorizationCredentials | None = Depends(security_scheme)) -> User | None:
+    if not auth or not auth.credentials:
+        return None
+    payload = decode_access_token(auth.credentials)
+    if not payload:
+        return None
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        return user
+
+
 def get_current_user(auth: HTTPAuthorizationCredentials | None = Depends(security_scheme)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Autentikasi gagal atau token tidak valid",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-    if not auth or not auth.credentials:
-        # Fallback to default user if no token provided (for backwards compatibility / dev mode)
-        with SessionLocal() as db:
-            user = db.query(User).filter(User.id == DEFAULT_USER_ID).first()
-            if not user:
-                now_iso = datetime.now(timezone.utc).isoformat()
-                user = User(id=DEFAULT_USER_ID, email="default@local.domain", created_at=now_iso, is_verified=True)
-                db.add(user)
-                db.commit()
-                db.refresh(user)
-            return user
-
-    payload = decode_access_token(auth.credentials)
-    if not payload:
+    user = get_optional_user(auth)
+    if not user:
         raise credentials_exception
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-
-    with SessionLocal() as db:
-        user = db.query(User).filter(User.id == int(user_id)).first()
-        if not user:
-            raise credentials_exception
-        return user
+    return user
 
 
 def get_google_auth_url() -> str:
