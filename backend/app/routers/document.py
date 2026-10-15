@@ -43,10 +43,13 @@ async def ingest(
                 detail="PDF ditolak: Dokumen ini berupa hasil scan atau gambar tanpa teks digital yang dapat disalin. Sistem hanya memproses PDF berbasis teks digital.",
             )
 
-        n = await asyncio.to_thread(rag.ingest_pdf_pages, session_id, file.filename, pages)
-
         session = sessions.get_session(session_id)
         cleanTitle = os.path.splitext(file.filename)[0].replace("_", " ").strip()
+        if session and session["user_id"] != current_user.id:
+            raise HTTPException(status_code=403, detail="Akses ditolak")
+
+        n = await asyncio.to_thread(rag.ingest_pdf_pages, session_id, file.filename, pages)
+
         if not session:
             sessions.create_session(session_id, cleanTitle or "Dokumen Baru", current_user.id)
         elif session.get("title") in ("Untitled", "Sesi Baru"):
