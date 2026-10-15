@@ -171,6 +171,34 @@ def get_document_sources(session_id: str) -> list[str]:
         return []
 
 
+def get_document_chunks(session_id: str) -> list[dict]:
+    collection = _collection(session_id)
+    if collection.count() == 0:
+        return []
+
+    result = collection.get()
+    ids = result.get("ids", [])
+    documents = result.get("documents", [])
+    metadatas = result.get("metadatas", [])
+    chunks = []
+
+    for document_id, text, metadata in zip(ids, documents, metadatas):
+        metadata = metadata or {}
+        chunk_id = metadata.get("chunk_id", document_id)
+        chunk_match = re.search(r"-c(\d+)-[0-9a-f]+$", chunk_id)
+        chunk_order = int(chunk_match.group(1)) if chunk_match else 0
+        chunks.append({
+            "id": document_id,
+            "text": text or "",
+            "source": metadata.get("source", "dokumen"),
+            "page": int(metadata.get("page", 1)),
+            "chunk_id": chunk_id,
+            "order": chunk_order,
+        })
+
+    return sorted(chunks, key=lambda chunk: (chunk["source"], chunk["page"], chunk["order"]))
+
+
 def ingest_pdf_pages(session_id: str, filename: str, pages: list[dict]) -> int:
     """
     Ingest PDF pages incrementally into ChromaDB and BM25 store.
