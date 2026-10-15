@@ -23,7 +23,10 @@ export function getUserId() {
 
 async function request(path, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeoutMs = options.timeoutMs || 20000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const fetchOptions = { ...options };
+  delete fetchOptions.timeoutMs;
   const token = getAuthToken();
   const userId = getUserId();
 
@@ -36,18 +39,18 @@ async function request(path, options = {}) {
 
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers,
       signal: controller.signal,
     });
-    clearTimeout(timeout);
+    clearTimeout(timeoutId);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.detail || `HTTP Error ${res.status}: Gagal memproses permintaan`);
     }
     return data;
   } catch (err) {
-    clearTimeout(timeout);
+    clearTimeout(timeoutId);
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error('Permintaan timeout (20s)');
     }
@@ -223,4 +226,52 @@ export async function ingestPdf(file, sessionId) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || 'Gagal mengunggah dokumen');
   return data;
+}
+
+export async function generateSessionDocument(sessionId) {
+  return request(`/session/${sessionId}/document/generate`, {
+    method: 'POST',
+    timeoutMs: 180000,
+  });
+}
+
+export async function exportSessionDocument(sessionId, title, markdown, format) {
+  const response = await requestBlob(`/session/${sessionId}/document/export`, {
+    method: 'POST',
+    body: JSON.stringify({ title, markdown, format }),
+  });
+  return response;
+}
+
+async function requestBlob(path, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  const token = getAuthToken();
+  const userId = getUserId();
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-user-id': userId,
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP Error ${response.status}: Gagal memproses dokumen`);
+    }
+    return response;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Permintaan dokumen timeout (60s)');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
