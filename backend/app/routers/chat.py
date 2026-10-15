@@ -27,12 +27,14 @@ router = APIRouter()
 async def chat_stream(req: QueryRequest, current_user: User | None = Depends(get_optional_user)):
     try:
         user_id = current_user.id if current_user else None
+        session = sessions.get_session(req.session_id) if current_user else None
+        if session and session["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Akses ditolak")
         history = sessions.get_messages(req.session_id) if current_user else []
         history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
 
         # Hanya simpan sesi dan pesan jika pengguna terautentikasi (login)
         if current_user and user_id:
-            session = sessions.get_session(req.session_id)
             isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
             newTitle = generateSessionTitle(req.text)
 
@@ -151,6 +153,8 @@ async def chat(req: QueryRequest, current_user: User | None = Depends(get_option
 
         if current_user and user_id:
             session = sessions.get_session(req.session_id)
+            if session and session["user_id"] != user_id:
+                raise HTTPException(status_code=403, detail="Akses ditolak")
             isPlaceholderTitle = not session or session.get("title") in ("Untitled", "Sesi Baru", "Dokumen Baru") or session.get("title", "").endswith(".pdf") or "_" in session.get("title", "")
             newTitle = generateSessionTitle(req.text)
 
