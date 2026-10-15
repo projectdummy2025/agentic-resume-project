@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.services import session_service as sessions
 from app.services import rag_service as rag
-from app.routers import auth, chat, document, session, memory
+from app.routers import auth, chat, document, session, memory, summary
 
 app = FastAPI()
 sessions.init_db()
@@ -28,3 +28,4 @@ app.include_router(chat.router)
 app.include_router(document.router)
 app.include_router(session.router)
 app.include_router(memory.router)
+app.include_router(summary.router)
