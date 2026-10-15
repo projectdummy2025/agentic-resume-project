@@ -30,6 +30,8 @@ async def get_messages(session_id: str, current_user: User | None = Depends(get_
     session = sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session["user_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
     docs = rag.get_document_sources(session_id)
     return {
         "session": session,
@@ -43,6 +45,8 @@ async def rename_session(session_id: str, title: str, current_user: User = Depen
     session = sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session["user_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
     sessions.rename_session(session_id, title)
     return {"ok": True}
 
@@ -52,6 +56,8 @@ async def delete_session(session_id: str, current_user: User = Depends(get_curre
     session = sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session["user_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
     sessions.delete_session(session_id)
     rag.delete_session_index(session_id)
     return {"ok": True}
