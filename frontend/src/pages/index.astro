@@ -76,13 +76,42 @@ const suggestions = [
     </div>
   </div>
 
+  <div id="docPreviewModalBackdrop" class="modal-backdrop" style="display: none;">
+    <section class="memory-modal document-preview-modal" role="dialog" aria-modal="true" aria-labelledby="documentPreviewTitle">
+      <header class="memory-modal-header">
+        <div>
+          <h3 id="documentPreviewTitle">Ringkasan Sesi</h3>
+          <p id="documentPreviewStatus" class="document-preview-status">Siap diunduh dalam format pilihan.</p>
+        </div>
+        <button id="closeDocumentPreviewBtn" class="modal-close-btn" type="button" aria-label="Tutup">×</button>
+      </header>
+      <div class="document-preview-body">
+        <div id="documentPreviewLoading" class="document-preview-loading" style="display: none;">
+          <span class="document-spinner"></span>
+          <span>Menyusun ringkasan dari chat dan dokumen RAG…</span>
+        </div>
+        <div id="documentPreviewContent" class="markdown-preview"></div>
+      </div>
+      <footer class="document-preview-footer">
+        <span class="document-format-label">Unduh sebagai</span>
+        <div class="document-format-actions">
+          <button class="document-download-btn" data-document-format="md" type="button">Markdown</button>
+          <button class="document-download-btn" data-document-format="docx" type="button">DOCX</button>
+          <button class="document-download-btn" data-document-format="pdf" type="button">PDF</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
   <script>
-    import { createSession, getMessages, chatStream, ingestPdf, getAuthToken } from '../lib/api';
+    import { createSession, getMessages, chatStream, ingestPdf, getAuthToken, generateSessionDocument, exportSessionDocument } from '../lib/api';
     import { renderResult, renderMarkdown, escapeHtml, cleanDocumentName } from '../lib/format';
 
     let currentPromptStyle = 'zero-shot';
     let isChatLocked = false;
     let currentSessionId = localStorage.getItem('currentSessionId') || '';
+    let documentTitle = '';
+    let documentMarkdown = '';
 
     const $ = (id: string) => document.getElementById(id)!;
     const inputEl = () => $('inputText') as HTMLTextAreaElement;
@@ -256,6 +285,79 @@ const suggestions = [
       row.innerHTML = `<div class="bot-content"><div class="typing-indicator"><span></span><span></span><span></span></div></div>`;
       $('chatWrapper').appendChild(row);
       return row.querySelector('.bot-content') as HTMLElement;
+    }
+
+    function openDocumentModal() {
+      $('docPreviewModalBackdrop').style.display = 'flex';
+    }
+
+    function closeDocumentModal() {
+      $('docPreviewModalBackdrop').style.display = 'none';
+    }
+
+    function setDocumentLoading(isLoading: boolean) {
+      $('documentPreviewLoading').style.display = isLoading ? 'flex' : 'none';
+      $('documentPreviewContent').style.display = isLoading ? 'none' : 'block';
+      document.querySelectorAll('.document-download-btn').forEach((button) => {
+        (button as HTMLButtonElement).disabled = isLoading;
+      });
+    }
+
+    async function generateDocument() {
+      if (!getAuthToken()) {
+        promptAuthModal();
+        return;
+      }
+      if (!currentSessionId || currentSessionId.startsWith('draft-')) {
+        showToast('Mulai obrolan atau unggah PDF sebelum membuat dokumen.');
+        return;
+      }
+
+      openDocumentModal();
+      setDocumentLoading(true);
+      $('documentPreviewStatus').textContent = 'Mengumpulkan isi chat dan dokumen RAG…';
+      $('documentPreviewContent').innerHTML = '';
+
+      try {
+        const result = await generateSessionDocument(currentSessionId);
+        documentTitle = result.title;
+        documentMarkdown = result.markdown;
+        $('documentPreviewTitle').textContent = documentTitle;
+        $('documentPreviewStatus').textContent = `Menggunakan ${result.sources?.length || 0} dokumen sumber.`;
+        $('documentPreviewContent').innerHTML = renderMarkdown(documentMarkdown);
+      } catch (err) {
+        closeDocumentModal();
+        showToast((err as Error).message);
+      } finally {
+        setDocumentLoading(false);
+      }
+    }
+
+    async function downloadDocument(format: string, button: HTMLButtonElement) {
+      if (!documentMarkdown) return;
+
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Menyiapkan…';
+
+      try {
+        const response = await exportSessionDocument(currentSessionId, documentTitle, documentMarkdown, format);
+        const file = await response.blob();
+        const url = URL.createObjectURL(file);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${documentTitle.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'ringkasan_sesi'}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        showToast(`Dokumen .${format} berhasil diunduh.`);
+      } catch (err) {
+        showToast((err as Error).message);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
     }
 
     async function sendMessage() {
@@ -512,6 +614,17 @@ const suggestions = [
         if (!getAuthToken()) {
           promptAuthModal();
         }
+      });
+
+      $('generateDocBtn').addEventListener('click', generateDocument);
+      $('closeDocumentPreviewBtn').addEventListener('click', closeDocumentModal);
+      $('docPreviewModalBackdrop').addEventListener('click', (event) => {
+        if (event.target === $('docPreviewModalBackdrop')) closeDocumentModal();
+      });
+      document.querySelectorAll('.document-download-btn').forEach((button) => {
+        button.addEventListener('click', () => {
+          downloadDocument((button as HTMLElement).dataset.documentFormat!, button as HTMLButtonElement);
+        });
       });
 
       inputEl().addEventListener('input', () => autoResize(inputEl()));
