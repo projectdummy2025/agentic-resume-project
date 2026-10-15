@@ -16,5 +16,10 @@ passlib[bcrypt]
 aiosmtplib
 httpx
 email-validator
+markdown
+python-docx
+reportlab
+xhtml2pdf
+pytest
 
 
