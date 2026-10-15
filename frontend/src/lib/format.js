@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 export function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (m) => (
@@ -40,7 +41,9 @@ export function renderMarkdown(val) {
   // Strip any raw inline source brackets [Sumber: ...] from response body
   str = str.replace(/\[Sumber:\s*[^\]]+\]/gi, '');
 
-  return marked.parse(str);
+  // Markdown output can contain untrusted document text; sanitize generated HTML.
+  str = str.replace(/<(?=\/?[a-zA-Z][^>]*>)/g, '&lt;');
+  return DOMPurify.sanitize(marked.parse(str));
 }
 
 export function renderResult(data) {
