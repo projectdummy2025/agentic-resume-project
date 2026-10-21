@@ -12,10 +12,12 @@ from app.services import memory_service as memory
 from app.services import rag_service as rag
 from app.services.chat_service import (
     generateSessionTitle,
-    format_academic_response,
-    should_condense_query,
-    condense_query,
+    cleanResponse,
+    shouldCondense,
+    condenseQuery,
     enrichQuery,
+    detectIntent,
+    buildHistory,
 )
 from app.core.prompts import get_system_prompt, build_chat_system_prompt
 from app.services.security_service import get_optional_user
@@ -50,27 +52,34 @@ async def chat_stream(req: QueryRequest, current_user: User | None = Depends(get
         has_docs = rag.has_documents(req.session_id)
         doc_refs = []
 
-        if has_docs:
-            if should_condense_query(req.text, len(history)):
-                condensed = await asyncio.to_thread(condense_query, req.text, history_text)
-            else:
-                condensed = req.text
+        # Deteksi intent percakapan untuk menentukan alur respon yang sesuai
+        queryIntent = detectIntent(req.text, has_docs)
 
-            searchQuery = enrichQuery(condensed, req.session_id)
+        if queryIntent == "document" and has_docs:
+            if shouldCondense(req.text, len(history)):
+                condensedText = await asyncio.to_thread(condenseQuery, req.text, history_text)
+            else:
+                condensedText = req.text
+
+            searchQuery = enrichQuery(condensedText, req.session_id)
             docs = await asyncio.to_thread(rag.retrieve, req.session_id, searchQuery)
 
-            context_parts = []
-            for d in docs:
-                src = d.get("source", "dokumen")
-                pg = d.get("page", 1)
-                txt = d.get("text", "").strip()
-                context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
-
-            context = "\n\n---\n\n".join(context_parts)
-            system_prompt = get_system_prompt(req.prompt_style, context, user_memories)
             if docs:
+                context_parts = []
+                for d in docs:
+                    src = d.get("source", "dokumen")
+                    pg = d.get("page", 1)
+                    txt = d.get("text", "").strip()
+                    context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
+
+                context = "\n\n---\n\n".join(context_parts)
+                system_prompt = get_system_prompt(req.prompt_style, context, user_memories)
                 doc_refs = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
+            else:
+                # Potongan dokumen tidak relevan dengan query, beralih ke mode santai/umum
+                system_prompt = build_chat_system_prompt(req.prompt_style, user_memories)
         else:
+            # Mode percakapan santai, umum, atau sesi tanpa dokumen RAG
             system_prompt = build_chat_system_prompt(req.prompt_style, user_memories)
 
         async def sse_generator():
@@ -79,8 +88,7 @@ async def chat_stream(req: QueryRequest, current_user: User | None = Depends(get
             try:
                 client = get_openai_client()
                 api_messages = [{"role": "system", "content": system_prompt}]
-                for m in history[-6:]:
-                    api_messages.append({"role": m["role"], "content": m["content"]})
+                api_messages.extend(buildHistory(history, maxRecent=6))
                 api_messages.append({"role": "user", "content": req.text})
 
                 response = client.chat.completions.create(
@@ -102,7 +110,7 @@ async def chat_stream(req: QueryRequest, current_user: User | None = Depends(get
                         yield f"data: {json.dumps({'chunk': delta})}\n\n"
                     await asyncio.sleep(0)
 
-                full_text = format_academic_response(full_text)
+                full_text = cleanResponse(full_text)
                 if current_user and user_id:
                     sessions.add_message(req.session_id, "assistant", full_text)
                     persisted = True
@@ -130,7 +138,7 @@ async def chat_stream(req: QueryRequest, current_user: User | None = Depends(get
             finally:
                 if current_user and user_id and not persisted and full_text.strip():
                     try:
-                        sessions.add_message(req.session_id, "assistant", full_text)
+                        sessions.add_message(req.session_id, "assistant", cleanResponse(full_text))
                     except Exception as persist_err:
                         print(f"Failed to persist partial assistant response: {persist_err}")
 
@@ -168,59 +176,53 @@ async def chat(req: QueryRequest, current_user: User | None = Depends(get_option
 
         has_docs = rag.has_documents(req.session_id)
         user_memories = memory.get_user_memories(user_id) if user_id else []
+        doc_refs = []
 
-        if has_docs:
-            if should_condense_query(req.text, len(history)):
-                condensed = await asyncio.to_thread(condense_query, req.text, history_text)
+        # Deteksi intent percakapan
+        queryIntent = detectIntent(req.text, has_docs)
+
+        if queryIntent == "document" and has_docs:
+            if shouldCondense(req.text, len(history)):
+                condensedText = await asyncio.to_thread(condenseQuery, req.text, history_text)
             else:
-                condensed = req.text
+                condensedText = req.text
 
-            searchQuery = enrichQuery(condensed, req.session_id)
+            searchQuery = enrichQuery(condensedText, req.session_id)
             docs = await asyncio.to_thread(rag.retrieve, req.session_id, searchQuery)
-            context_parts = []
-            for d in docs:
-                src = d.get("source", "dokumen")
-                pg = d.get("page", 1)
-                txt = d.get("text", "").strip()
-                context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
 
-            context = "\n\n---\n\n".join(context_parts)
-            system_instruction = get_system_prompt(req.prompt_style, context, user_memories)
-            api_messages = [{"role": "system", "content": system_instruction}]
-            for m in history[-6:]:
-                api_messages.append({"role": m["role"], "content": m["content"]})
-            api_messages.append({"role": "user", "content": req.text})
-
-            response = get_openai_client().chat.completions.create(
-                model=OPENAI_COMPATIBLE_MODEL,
-                messages=api_messages,
-                temperature=0.7,
-            )
-            content = ""
-            if response.choices and response.choices[0].message:
-                content = response.choices[0].message.content or ""
-
-            content = format_academic_response(content)
-            result = {"jawaban": content}
             if docs:
-                result["dokumen"] = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
+                context_parts = []
+                for d in docs:
+                    src = d.get("source", "dokumen")
+                    pg = d.get("page", 1)
+                    txt = d.get("text", "").strip()
+                    context_parts.append(f"[Sumber: {src} | Halaman: {pg}]\n{txt}")
+
+                context = "\n\n---\n\n".join(context_parts)
+                system_instruction = get_system_prompt(req.prompt_style, context, user_memories)
+                doc_refs = list(dict.fromkeys(f"{d['source']} (hal. {d.get('page', 1)})" for d in docs))
+            else:
+                system_instruction = build_chat_system_prompt(req.prompt_style, user_memories)
         else:
             system_instruction = build_chat_system_prompt(req.prompt_style, user_memories)
-            api_messages = [{"role": "system", "content": system_instruction}]
-            for m in history[-6:]:
-                api_messages.append({"role": m["role"], "content": m["content"]})
-            api_messages.append({"role": "user", "content": req.text})
 
-            response = get_openai_client().chat.completions.create(
-                model=OPENAI_COMPATIBLE_MODEL,
-                messages=api_messages,
-                temperature=0.7,
-            )
-            content = ""
-            if response.choices and response.choices[0].message:
-                content = response.choices[0].message.content or ""
-            content = format_academic_response(content)
-            result = {"jawaban": content}
+        api_messages = [{"role": "system", "content": system_instruction}]
+        api_messages.extend(buildHistory(history, maxRecent=6))
+        api_messages.append({"role": "user", "content": req.text})
+
+        response = get_openai_client().chat.completions.create(
+            model=OPENAI_COMPATIBLE_MODEL,
+            messages=api_messages,
+            temperature=0.7,
+        )
+        content = ""
+        if response.choices and response.choices[0].message:
+            content = response.choices[0].message.content or ""
+
+        content = cleanResponse(content)
+        result = {"jawaban": content}
+        if doc_refs:
+            result["dokumen"] = doc_refs
 
         if current_user and user_id:
             sessions.add_message(req.session_id, "assistant", result.get("jawaban", ""))
@@ -241,6 +243,7 @@ async def chat(req: QueryRequest, current_user: User | None = Depends(get_option
             )
 
         return result
+
     except HTTPException:
         raise
     except Exception as e:
