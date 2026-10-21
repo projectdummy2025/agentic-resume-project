@@ -367,7 +367,10 @@ def rerank_flashrank(query: str, candidates: list[dict], top_k: int = 4) -> list
         return candidates[:top_k]
 
 
-def retrieve(session_id: str, query: str, k: int = 4) -> list[dict]:
+MIN_RELEVANCE_SCORE = 0.15
+
+
+def retrieve(session_id: str, query: str, k: int = 4, minScore: float = MIN_RELEVANCE_SCORE) -> list[dict]:
     # 1. Dense Search
     dense_results = query_dense(session_id, query, top_k=10)
     # 2. Sparse Search (BM25)
@@ -381,7 +384,16 @@ def retrieve(session_id: str, query: str, k: int = 4) -> list[dict]:
 
     # 4. Re-ranking via FlashRank ONNX
     final_docs = rerank_flashrank(query, candidates, top_k=k)
-    return final_docs
+
+    # Filter dokumen yang memenuhi ambang batas relevansi minimum
+    relevantDocs = []
+    for doc in final_docs:
+        docScore = doc.get("score")
+        if docScore is not None and docScore < minScore:
+            continue
+        relevantDocs.append(doc)
+
+    return relevantDocs
 
 
 def delete_session_index(session_id: str):
